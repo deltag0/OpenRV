@@ -908,6 +908,8 @@ namespace IPCore
 
     bool FBCache::add(FrameBuffer* fb, int frame, bool force, const IPNode* node)
     {
+        std::cout << "FBCache::add() frame " << frame << " (fb " << fb << ", " << fb->identifier() << ") force " << force << " frame in cache "
+                  << isFrameCached(frame) << std::endl;
         if (node)
         {
             if (!fb->inCache())
