@@ -95,7 +95,8 @@ Reusable across all packages; lives in `src/test/golden/harness/`.
 
 | File | Role |
 |---|---|
-| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. Pass `--impl mu\|python` and optional `--mode` to select implementations (see [toggle section](#mupython-implementation-toggle)). |
+| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. Pass `--impl mu\|python` and optional `--mode` to select implementations (see [toggle section](#mupython-implementation-toggle)). Runs `golden_bootstrap.py` before each scenario. |
+| `golden_bootstrap.py` | In-RV pre-scenario hook: activates `source_setup` when `GOLDEN_SOURCE_SETUP=1` (set automatically for `tree_readonly.py`). |
 | `compare.py` | Behavioral gate (normalized GTO diff) + pixel gate (`rmsImageDiff`). Exit 0 = PASS. |
 
 ### Layout per package
@@ -119,6 +120,10 @@ src/test/golden/
   runner wraps scenarios so they always `os._exit`.
 - `-pyeval` runs **before** the Qt event loop, so widgets don't paint on their own — pump
   the event loop (`QApplication.processEvents`) before `grab()`.
+- **Immediate modes** (e.g. `source_setup`) load at `state-initialized` but start **inactive**
+  in headless runs; the harness re-activates them via `golden_bootstrap.py` when needed.
+  Set `GOLDEN_SOURCE_SETUP=1` to force color setup for all scenarios (default: off except
+  `tree_readonly.py`, which pins movieproc `sRGB2linear=1`).
 - Scenarios drive the package via the `rv.commands` API (deterministic, headless-safe).
   Drag-and-drop and other pointer interactions need synthetic Qt input events (`QTest`);
   schedule those scenarios last.

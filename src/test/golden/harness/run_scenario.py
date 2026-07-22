@@ -31,6 +31,34 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", "..", ".."))
 DEFAULT_RV = os.path.join(REPO_ROOT, "_build", "stage", "app", "bin", "rv")
 MODE_IMPL_ENV_PREFIX = "RV_MODE_IMPL_"
+SESSION_MANAGER_PKG = "session_manager"
+# Edit/stack/switch modes ship inside the session_manager package directory.
+SESSION_MANAGER_SIBLING_MODES = {
+    "Composite_edit_mode",
+    "FolderGroup_edit_mode",
+    "LayoutGroup_edit_mode",
+    "RetimeGroup_edit_mode",
+    "SequenceGroup_edit_mode",
+    "SourceGroup_edit_mode",
+    "Stack_edit_mode",
+    "StackGroup_edit_mode",
+    "Switch_edit_mode",
+    "SwitchGroup_edit_mode",
+    "transform_manip",
+}
+SESSION_MANAGER_ALL_MODES = [SESSION_MANAGER_PKG] + sorted(SESSION_MANAGER_SIBLING_MODES)
+
+
+def package_dir_for_mode(mode_name: str) -> str | None:
+    """Map an RV mode name to its package source directory on PYTHONPATH."""
+    direct = os.path.join(REPO_ROOT, "src", "plugins", "rv-packages", mode_name)
+    if os.path.isdir(direct):
+        return direct
+    sm_pkg = os.path.join(REPO_ROOT, "src", "plugins", "rv-packages", SESSION_MANAGER_PKG)
+    if mode_name in SESSION_MANAGER_SIBLING_MODES or mode_name == SESSION_MANAGER_PKG:
+        if os.path.isdir(sm_pkg):
+            return sm_pkg
+    return None
 
 
 def apply_mode_impl(env: dict[str, str], modes: list[str], impl: str) -> None:
@@ -47,6 +75,10 @@ def parse_mode_names(raw: str) -> list[str]:
 # exits non-zero so the runner can report failure.
 _PYEVAL = (
     "import os, sys, traceback\n"
+    "try:\n"
+    "    exec(open(os.environ['GOLDEN_BOOTSTRAP']).read(), {'__name__': '__bootstrap__'})\n"
+    "except Exception:\n"
+    "    traceback.print_exc()\n"
     "try:\n"
     "    exec(open(os.environ['GOLDEN_SCENARIO']).read(), {'__name__': '__scenario__'})\n"
     "    _rc = 0\n"
@@ -76,9 +108,9 @@ def main() -> int:
     )
     ap.add_argument(
         "--mode",
-        default="session_manager",
+        default=",".join(SESSION_MANAGER_ALL_MODES),
         help="Comma-separated RV mode name(s) affected by --impl "
-        "(default session_manager)",
+        f"(default: all {len(SESSION_MANAGER_ALL_MODES)} session_manager package modes)",
     )
     args = ap.parse_args()
 
@@ -97,19 +129,27 @@ def main() -> int:
     env["PYTHONUNBUFFERED"] = "1"
     env["GOLDEN_OUT"] = out              # scenario writes artifacts here
     env["GOLDEN_SCENARIO"] = scenario
+    env["GOLDEN_BOOTSTRAP"] = os.path.join(_HERE, "golden_bootstrap.py")
+    # tree_readonly pins movieproc sRGB2linear=1; source_setup must be active first.
+    if os.path.basename(scenario) == "tree_readonly.py":
+        env.setdefault("GOLDEN_SOURCE_SETUP", "1")
     mode_names = parse_mode_names(args.mode)
     if args.impl is not None:
         apply_mode_impl(env, mode_names, args.impl)
     elif not any(k.startswith(MODE_IMPL_ENV_PREFIX) for k in env):
         apply_mode_impl(env, mode_names, "mu")
-    # Make the LIVE package source importable so a Python port loads without a
-    # rebuild/stage step (RV imports the mode by bare name via PyImport_Import).
-    # A package dir is src/plugins/rv-packages/<modeName>/ that actually exists.
-    pkg_dirs = [
-        os.path.join(REPO_ROOT, "src", "plugins", "rv-packages", n)
-        for n in mode_names
-    ]
-    pkg_dirs = [d for d in pkg_dirs if os.path.isdir(d)]
+    # Always put the session_manager package on PYTHONPATH when any of its modes
+    # are selected (edit modes live alongside session_manager.py).
+    pkg_dirs: list[str] = []
+    sm_pkg = os.path.join(REPO_ROOT, "src", "plugins", "rv-packages", SESSION_MANAGER_PKG)
+    if os.path.isdir(sm_pkg) and any(
+        n == SESSION_MANAGER_PKG or n in SESSION_MANAGER_SIBLING_MODES for n in mode_names
+    ):
+        pkg_dirs.append(sm_pkg)
+    for name in mode_names:
+        pkg_dir = package_dir_for_mode(name)
+        if pkg_dir and pkg_dir not in pkg_dirs:
+            pkg_dirs.append(pkg_dir)
     if pkg_dirs:
         prior = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = os.pathsep.join(pkg_dirs + ([prior] if prior else []))

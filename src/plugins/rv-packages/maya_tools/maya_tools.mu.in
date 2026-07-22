@@ -13,7 +13,7 @@ use app_utils;
 require io;
 require extra_commands;
 require runtime;
-require session_manager;
+require session_manager_api;
 
 require qt;
 require io;
@@ -156,10 +156,10 @@ class: MayaTools : MinorMode
 
     method: compareSelected (void; Event event, string style)
     {
-        if (session_manager.theMode() eq nil) return;
+        if (session_manager_api.theMode() eq nil) return;
 
         let nodeType = if (style == "tile") then "RVLayoutGroup" else "RVStackGroup",
-            selected = session_manager.theMode().selectedNodes();
+            selected = session_manager_api.theMode().selectedNodes();
 
         if (selected.size() < 2) return;
 
@@ -213,18 +213,18 @@ class: MayaTools : MinorMode
 
     method: oneViewSelected (int; )
     {
-        if (session_manager.theMode() eq nil) return DisabledMenuState;
+        if (session_manager_api.theMode() eq nil) return DisabledMenuState;
 
-        let nodes = session_manager.theMode().selectedNodes();
+        let nodes = session_manager_api.theMode().selectedNodes();
 
         return if (nodes.size() == 1) then NeutralMenuState else DisabledMenuState;
     }
 
     method: viewsSelected (int; )
     {
-        if (session_manager.theMode() eq nil) return DisabledMenuState;
+        if (session_manager_api.theMode() eq nil) return DisabledMenuState;
 
-        let nodes = session_manager.theMode().selectedNodes();
+        let nodes = session_manager_api.theMode().selectedNodes();
 
         return if (nodes.size() >= 2) then NeutralMenuState else DisabledMenuState;
     }
@@ -261,9 +261,9 @@ class: MayaTools : MinorMode
 
     method: markCurrentAsTarget (void; Event event)
     {
-        if (session_manager.theMode() eq nil) return;
+        if (session_manager_api.theMode() eq nil) return;
 
-        let nodes = session_manager.theMode().selectedNodes();
+        let nodes = session_manager_api.theMode().selectedNodes();
 
         if (nodes.size() != 1) return;
 

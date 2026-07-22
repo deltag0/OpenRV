@@ -8,22 +8,16 @@ SET(_target
     "session_manager"
 )
 
-IF(RV_VFX_PLATFORM STRGREATER_EQUAL CY2024)
-  SET(MU_QT_QDRAGMOVEEVENT_POSITION
-      "event.position().toPoint()"
-  )
-  SET(MU_QT_QPALETTE_COLORROLE
-      "QPalette.Window"
-  )
-ELSEIF(RV_VFX_PLATFORM STREQUAL CY2023)
-  SET(MU_QT_QDRAGMOVEEVENT_POSITION
-      "event.pos()"
-  )
-  SET(MU_QT_QPALETTE_COLORROLE
-      "QPalette.Background"
-  )
-ENDIF()
+FILE(GLOB_RECURSE _pkg_files
+     RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+     CONFIGURE_DEPENDS *
+)
+LIST(FILTER _pkg_files EXCLUDE REGEX "\\.mu\\.in$")
+LIST(FILTER _pkg_files EXCLUDE REGEX "\\.mu$")
+LIST(FILTER _pkg_files EXCLUDE REGEX "__pycache__")
+LIST(FILTER _pkg_files EXCLUDE REGEX "\\.pyc$")
+LIST(FILTER _pkg_files EXCLUDE REGEX "\\.pyo$")
+LIST(APPEND _pkg_files session_manager_api.mu)
+LIST(REMOVE_ITEM _pkg_files Makefile CMakeLists.txt PACKAGE)
 
-CONFIGURE_FILE(session_manager.mu.in ${CMAKE_CURRENT_SOURCE_DIR}/session_manager.mu @ONLY)
-
-RV_STAGE(TYPE "RVPKG" TARGET ${_target})
+RV_STAGE(TYPE "RVPKG" TARGET ${_target} FILES ${_pkg_files})

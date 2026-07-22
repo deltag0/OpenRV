@@ -81,12 +81,13 @@ class: PyMinorMode : MinorMode
     method: activate (void;)
     {
         PyObject_CallObject(_activateFunc, _pymode);
-        //PyObject_CallObject(_setModeStatusFunc, (_pymode, true));
+        _active = to_bool(PyObject_CallObject(_activeFunc, _pymode));
     }
 
     method: deactivate (void;)
     {
         PyObject_CallObject(_deactivateFunc, _pymode);
+        _active = to_bool(PyObject_CallObject(_activeFunc, _pymode));
     }
 
     method: layout (void; Event event)
@@ -268,6 +269,9 @@ class: ModeManagerMode : MinorMode
 
     method: preferPythonImpl (bool; string modeName)
     {
+        // session_manager ships as Python-only; never load a stale .mu from another path.
+        if (modeName == "session_manager") return true;
+
         let perMode = getenv("RV_MODE_IMPL_%s" % modeName);
         if (perMode neq nil)
         {
@@ -361,9 +365,7 @@ class: ModeManagerMode : MinorMode
 
                 if (pymode eq nil)
                 {
-                    throw exception(
-                        "RV_MODE_IMPL_%s=python (or equivalent toggle) set but "
-                        "python module failed to load" % entry.name);
+                    throw exception("RV_MODE_IMPL_%s=python set but python module failed to load" % entry.name);
                 }
             }
             else if (!runtime.load_module(entry.name))
@@ -420,7 +422,7 @@ class: ModeManagerMode : MinorMode
         }
         catch (exception exc)
         {
-            showWarning("unable to load \"%s\" : %s" % (name, exc));
+            showWarning("unable to load \"%s\" : %s" % (entry.name, exc));
         }
 
         if (entry.mode neq nil && entry.mode._active != activate)
@@ -451,7 +453,7 @@ class: ModeManagerMode : MinorMode
         }
         catch (exception exc)
         {
-            showWarning("unable to load \"%s\" : %s" % (name, exc));
+            showWarning("unable to load \"%s\" : %s" % (entry.name, exc));
         }
     }
 

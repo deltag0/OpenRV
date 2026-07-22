@@ -13,7 +13,7 @@ require extra_commands;
 require io;
 require rvui;
 require qt;
-require session_manager;
+require session_manager_api;
 require rvnuke_process;
 require runtime;
 
@@ -408,10 +408,10 @@ class: RVNukeMode : rvtypes.MinorMode
     {
         deb ("compareSelected %s" % style);
 
-        if (session_manager.theMode() eq nil) return;
+        if (session_manager_api.theMode() eq nil) return;
 
         let nodeType = if (style == "tile") then "RVLayoutGroup" else "RVStackGroup",
-            selected = session_manager.theMode().selectedNodes();
+            selected = session_manager_api.theMode().selectedNodes();
 
         if (selected.size() < 2) return;
 
@@ -625,7 +625,7 @@ class: RVNukeMode : rvtypes.MinorMode
         let name  = getNukeProp (source, "node"),
             label = getNukeProp (source, "label");
 
-        if (label != "") session_manager.setToolTipProp (source, label + "\n(node: %s)\n" % name);
+        if (label != "") session_manager_api.setToolTipProp (source, label + "\n(node: %s)\n" % name);
         deb ("   setUiNameAndTip '%s' inProgess %s, done" % (source, inProgress));
     }
 
@@ -1701,9 +1701,9 @@ nuke.executeMultiple((writeNode,), ([%s, %s, %s],))
         //  Collect target source from session manager selection
         //
         {
-            if (session_manager.theMode() eq nil) return;
+            if (session_manager_api.theMode() eq nil) return;
 
-            let selectedNodes = session_manager.theMode().selectedNodes();
+            let selectedNodes = session_manager_api.theMode().selectedNodes();
 
             deb ("    selectedNodes %s" % selectedNodes);
 
@@ -2131,9 +2131,9 @@ nuke.executeMultiple((writeNode,), ([%s, %s, %s],))
     {
         deb ("restoreCheckpoint()");
 
-        if (session_manager.theMode() eq nil) return;
+        if (session_manager_api.theMode() eq nil) return;
 
-        let selectedNodes = session_manager.theMode().selectedNodes();
+        let selectedNodes = session_manager_api.theMode().selectedNodes();
 
         deb ("    selectedNodes %s" % selectedNodes);
 
@@ -2227,9 +2227,9 @@ nuke.executeMultiple((writeNode,), ([%s, %s, %s],))
     {
         deb ("creatNukeReadNodes()");
 
-        if (session_manager.theMode() eq nil) return;
+        if (session_manager_api.theMode() eq nil) return;
 
-        let selectedNodes = session_manager.theMode().selectedNodes();
+        let selectedNodes = session_manager_api.theMode().selectedNodes();
 
         deb ("    selectedNodes %s" % selectedNodes);
 
@@ -2286,9 +2286,9 @@ nuke.executeMultiple((writeNode,), ([%s, %s, %s],))
 
     method: sourceSelected (int; )
     {
-        if (session_manager.theMode() eq nil) return commands.DisabledMenuState;
+        if (session_manager_api.theMode() eq nil) return commands.DisabledMenuState;
 
-        let nodes = session_manager.theMode().selectedNodes();
+        let nodes = session_manager_api.theMode().selectedNodes();
 
         for_each (n; nodes)
         {
@@ -2300,18 +2300,18 @@ nuke.executeMultiple((writeNode,), ([%s, %s, %s],))
 
     method: viewsSelected (int; )
     {
-        if (session_manager.theMode() eq nil) return commands.DisabledMenuState;
+        if (session_manager_api.theMode() eq nil) return commands.DisabledMenuState;
 
-        let nodes = session_manager.theMode().selectedNodes();
+        let nodes = session_manager_api.theMode().selectedNodes();
 
         return if (nodes.size() >= 2) then commands.NeutralMenuState else commands.DisabledMenuState;
     }
 
     method: renderSelected (int; )
     {
-        if (session_manager.theMode() eq nil) return commands.DisabledMenuState;
+        if (session_manager_api.theMode() eq nil) return commands.DisabledMenuState;
 
-        let nodes = session_manager.theMode().selectedNodes();
+        let nodes = session_manager_api.theMode().selectedNodes();
 
         if (nodes.size() == 1 && getNukeProp(nodes[0], "type") == "current")
         {
@@ -2322,9 +2322,9 @@ nuke.executeMultiple((writeNode,), ([%s, %s, %s],))
 
     method: checkpointSelected (int; )
     {
-        if (session_manager.theMode() eq nil) return commands.DisabledMenuState;
+        if (session_manager_api.theMode() eq nil) return commands.DisabledMenuState;
 
-        let nodes = session_manager.theMode().selectedNodes();
+        let nodes = session_manager_api.theMode().selectedNodes();
 
         if (nodes.size() == 1)
         {

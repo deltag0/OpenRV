@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 the_mode = None
 
+MODE_NAME = "local_thumbnail_gen"
+
 FRAME_WIDTH = 240
 MAX_FILMSTRIP_FRAMES = 25
 MAX_WORKERS = 2
@@ -88,7 +90,7 @@ class LocalThumbnailGen(rvtypes.MinorMode):
 
         # The last parameter is the priority of the plugin. Having it at 10 means it will be run last
         # letting custom plugins of higher priority run first and consume the event before the local plugin runs.
-        self.init("LocalThumbnailGen", self.global_bindings(), None, None, None, 10)
+        self.init(MODE_NAME, self.global_bindings(), None, None, None, 10)
 
     def global_bindings(self) -> list[tuple[str, Any, str]]:
         return [

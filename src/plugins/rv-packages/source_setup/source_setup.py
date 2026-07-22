@@ -302,7 +302,9 @@ class SourceSetupMode(rvtypes.MinorMode):
             #
             srcInfo["TransferFunction"] = self.checkEnvVar(ext, mInfo["bitsPerChannel"], srcInfo["TransferFunction"])
 
-            if self.setFileColorSpace(linNode, srcInfo["TransferFunction"], srcInfo["ColorSpace"]):
+            if linNode is None:
+                self._pending_color_groups.add(group)
+            elif self.setFileColorSpace(linNode, srcInfo["TransferFunction"], srcInfo["ColorSpace"]):
                 #
                 #  The default display correction is sRGB if the
                 #  pixels can be converted to (or are already in)
@@ -500,14 +502,32 @@ class SourceSetupMode(rvtypes.MinorMode):
         event.reject()
         self._readingSession = False
 
-    def checkForDisplayGroup(self, event):
+    def graphNewNode(self, event):
         event.reject()
-        if commands.nodeType(event.contents()) == "RVDisplayGroup":
+        node = event.contents()
+        if commands.nodeType(node) == "RVDisplayGroup":
             self._haveNewDisplayGroups = True
+        if commands.nodeType(node) != "RVLinearize":
+            return
+        group = commands.nodeGroup(node)
+        while group is not None and commands.nodeType(group) != "RVSourceGroup":
+            group = commands.nodeGroup(group)
+        if group is None:
+            return
+
+        class _RetryEvent:
+            def contents(self):
+                return group + ";;"
+
+            def reject(self):
+                pass
+
+        self.sourceSetup(_RetryEvent(), False)
 
     def __init__(self):
         self._readingSession = False
         self._haveNewDisplayGroups = True
+        self._pending_color_groups = set()
 
         rvtypes.MinorMode.__init__(self)
 
@@ -522,7 +542,7 @@ class SourceSetupMode(rvtypes.MinorMode):
                     self.sourceSetup,
                     "Color and Geometry Management",
                 ),
-                ("graph-new-node", self.checkForDisplayGroup, ""),
+                ("graph-new-node", self.graphNewNode, ""),
             ],
             None,
             "source_setup",
@@ -531,5 +551,14 @@ class SourceSetupMode(rvtypes.MinorMode):
         # "source_setup" key used by this and ocio modes
 
 
+_the_mode = None
+
+
 def createMode():
-    return SourceSetupMode()
+    global _the_mode
+    if _the_mode is None:
+        _the_mode = SourceSetupMode()
+    if not _the_mode.isActive():
+        commands.activateMode(_the_mode.modeName())
+        _the_mode._active = True
+    return _the_mode
