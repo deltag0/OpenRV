@@ -5,8 +5,7 @@ Python via golden tests. Each package has its own inventory doc (e.g.
 `session_manager/COVERAGE.md`) that plugs into the method defined here. Design rationale:
 `docs/superpowers/specs/2026-07-21-mu-to-python-golden-tests-design.md`.
 
-The migration is a **golden-master (characterization) refactor**: freeze the current Mu
-behavior as a baseline, then require the Python port to reproduce it exactly.
+The migration uses baseline behaviour and appearance from the Mu implementation. Refactored code will be compared with the baseline tests.
 
 ```
 setup:   [Mu package] --capture--> golden (committed)     ┐ actual == golden → PASS
@@ -18,7 +17,43 @@ loop:    [Mu package] --capture--> golden (already committed)
 
 A **passing scenario before a port exists means only that the Mu capture is reproducible
 (Mu == Mu)** — it does not verify any migration. The real test is when the Python port is
-toggled in (see per-package coexistence) and the same scenarios run against it.
+toggled in (see [Mu/Python implementation toggle](#mupython-implementation-toggle))
+and the same scenarios run against it.
+
+---
+
+## Mu/Python implementation toggle
+
+Both the Mu and Python sources for a package can live in the same build. RV normally loads **Mu first** when a `.mu` module exists; Python is only a fallback. For migration we need to run a **Python** mode against Mu-captured goldens without removing the Mu sources from the tree.
+
+### Environment variables
+
+`<modeName>` is the RV mode name from `PACKAGE` / `rvload2` (extension stripped),
+e.g. `session_manager`, `Stack_edit_mode`.
+
+| Variable | Example | Effect |
+|---|---|---|
+| `RV_MODE_IMPL_<modeName>` | `RV_MODE_IMPL_session_manager=python` | Per-mode: `python` skips Mu and loads `<modeName>.py`; `mu` forces Mu-first (default behavior). |
+| `RV_PREFER_PYTHON_MODES` | `RV_PREFER_PYTHON_MODES=session_manager,pyhello` | Comma-separated list of modes to load from Python when both exist. |
+
+Precedence: per-mode `RV_MODE_IMPL_*` → `RV_PREFER_PYTHON_MODES` → default Mu-first.
+
+### Harness
+
+```bash
+# Mu (default): capture goldens, prove Mu determinism, re-baseline
+python3 src/test/golden/harness/run_scenario.py \
+    --scenario src/test/golden/session_manager/scenarios/tree_readonly.py \
+    --out /tmp/tree_readonly --impl mu
+
+# Python: migration loop / port verification against committed goldens
+python3 src/test/golden/harness/run_scenario.py \
+    --scenario src/test/golden/session_manager/scenarios/tree_readonly.py \
+    --out /tmp/tree_readonly --impl python
+```
+
+### Limits
+- Requires `<modeName>.py` with a `createMode()` entry point on the Python path.
 
 ---
 
@@ -56,7 +91,7 @@ Reusable across all packages; lives in `src/test/golden/harness/`.
 
 | File | Role |
 |---|---|
-| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. |
+| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. Pass `--impl mu\|python` and optional `--mode` to select implementations (see [toggle section](#mupython-implementation-toggle)). |
 | `compare.py` | Behavioral gate (normalized GTO diff) + pixel gate (`rmsImageDiff`). Exit 0 = PASS. |
 
 ### Layout per package
@@ -70,18 +105,7 @@ src/test/golden/
     golden/<id>/             # committed baselines: session.rv (+ panel.png)
 ```
 
-### Run recipe
-```bash
-# capture a golden (from the MU package) or produce an actual (from the PYTHON port)
-python3 src/test/golden/harness/run_scenario.py \
-    --scenario src/test/golden/<pkg>/scenarios/<id>.py --out /tmp/<id>
-
-# gate the actual against the committed golden
-python3 src/test/golden/harness/compare.py \
-    --golden-dir src/test/golden/<pkg>/golden/<id> --actual-dir /tmp/<id> --dmax 0
-```
-
-### Headless operational rules (learned during bring-up — apply to every scenario)
+### Headless operational rules 
 - Launch under `xvfb-run` with `LIBGL_ALWAYS_SOFTWARE=1`. **`QT_QPA_PLATFORM=offscreen`
   segfaults RV** (its offscreen GL plugin needs GLX). Software Mesa under Xvfb is
   deterministic given a pinned Mesa version.
@@ -125,3 +149,8 @@ A slice of a Python port is accepted when:
 4. Any cross-package API the slice exposes (callable from other Mu/Python packages)
    remains callable — verified by a scenario or integration check before the Mu source is
    removed.
+
+
+## Allowed Operations
+
+1. No file under golden/ shall be modified

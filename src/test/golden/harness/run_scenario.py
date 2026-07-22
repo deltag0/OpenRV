@@ -17,6 +17,7 @@ Why it is shaped this way (all learned empirically on 2026-07-21):
 
 Usage:
     run_scenario.py --scenario PATH --out DIR [--rv PATH] [--timeout N]
+    [--impl mu|python] [--mode MODE[,MODE...]]
 """
 
 import argparse
@@ -29,6 +30,17 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", "..", ".."))
 DEFAULT_RV = os.path.join(REPO_ROOT, "_build", "stage", "app", "bin", "rv")
+MODE_IMPL_ENV_PREFIX = "RV_MODE_IMPL_"
+
+
+def apply_mode_impl(env: dict[str, str], modes: list[str], impl: str) -> None:
+    """Set per-mode impl env vars."""
+    for name in modes:
+        env[f"{MODE_IMPL_ENV_PREFIX}{name}"] = impl
+
+
+def parse_mode_names(raw: str) -> list[str]:
+    return [m.strip() for m in raw.split(",") if m.strip()]
 
 # The in-RV wrapper: exec the scenario file, and ALWAYS hard-exit so a
 # windowless RV never hangs waiting for a GUI event. A scenario exception
@@ -55,6 +67,19 @@ def main() -> int:
     ap.add_argument("--rv", default=DEFAULT_RV, help="Path to the rv launcher")
     ap.add_argument("--timeout", type=int, default=180, help="Seconds before giving up")
     ap.add_argument("--screen", default="1280x1024x24", help="Xvfb screen geometry")
+    ap.add_argument(
+        "--impl",
+        choices=("mu", "python"),
+        default=None,
+        help="Implementation for --mode name(s): sets RV_MODE_IMPL_<mode>=<impl> "
+        "(default mu unless already in the environment)",
+    )
+    ap.add_argument(
+        "--mode",
+        default="session_manager",
+        help="Comma-separated RV mode name(s) affected by --impl "
+        "(default session_manager)",
+    )
     args = ap.parse_args()
 
     scenario = os.path.abspath(args.scenario)
@@ -72,6 +97,11 @@ def main() -> int:
     env["PYTHONUNBUFFERED"] = "1"
     env["GOLDEN_OUT"] = out              # scenario writes artifacts here
     env["GOLDEN_SCENARIO"] = scenario
+    mode_names = parse_mode_names(args.mode)
+    if args.impl is not None:
+        apply_mode_impl(env, mode_names, args.impl)
+    elif not any(k.startswith(MODE_IMPL_ENV_PREFIX) for k in env):
+        apply_mode_impl(env, mode_names, "mu")
     # Root/container safety (harmless otherwise).
     env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
@@ -79,7 +109,14 @@ def main() -> int:
         "xvfb-run", "-a", "-s", f"-screen 0 {args.screen}",
         args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL,
     ]
-    print(f"[run_scenario] {os.path.basename(scenario)} -> {out}", file=sys.stderr)
+    impl_note = ", ".join(
+        f"{MODE_IMPL_ENV_PREFIX}{n}={env.get(f'{MODE_IMPL_ENV_PREFIX}{n}', 'mu')}"
+        for n in mode_names
+    )
+    print(
+        f"[run_scenario] {os.path.basename(scenario)} -> {out} ({impl_note})",
+        file=sys.stderr,
+    )
     try:
         proc = subprocess.run(cmd, env=env, timeout=args.timeout)
     except subprocess.TimeoutExpired:

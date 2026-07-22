@@ -307,10 +307,12 @@ and event names MUST be preserved** (external code keys on them — see O.5).
 > golden/integration check for it before removing the Mu module.
 
 ### O.6 Coexistence during migration
-A toggle to load the Mu vs the Python `session_manager` (env var or a `PACKAGE` swap) so
-goldens can be captured from Mu and re-run against Python without deleting the original.
-The `.rvpkg` mechanism is language-agnostic, so both can coexist in the tree during the
-port.
+Both Mu and Python sources can remain in the package directory during the port.
+Select which mode(s) RV loads at launch via `RV_MODE_IMPL_<modeName>` or
+`RV_PREFER_PYTHON_MODES` — see
+**[`../VERIFICATION.md`](../VERIFICATION.md#mupython-implementation-toggle)**.
+The `.rvpkg` mechanism is language-agnostic, so both can coexist in the tree while
+goldens are captured from Mu and re-run against Python.
 
 ---
 
