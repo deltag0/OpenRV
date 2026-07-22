@@ -83,6 +83,10 @@ Used by every package inventory. **A ✅ means the behavior is pinned by a commi
   interacted with).
 - ⬜ **todo** — no scenario yet; listed in the package's scenario backlog.
 
+Behaviors with no deterministic graph/pixel outcome and no command equivalent (modal UI,
+settings persistence, async previews, "event was sent") are **dropped** — removed from the
+inventory rather than tracked — and noted in a short "Dropped" section per package.
+
 ---
 
 ## The harness

@@ -102,6 +102,17 @@ def main() -> int:
         apply_mode_impl(env, mode_names, args.impl)
     elif not any(k.startswith(MODE_IMPL_ENV_PREFIX) for k in env):
         apply_mode_impl(env, mode_names, "mu")
+    # Make the LIVE package source importable so a Python port loads without a
+    # rebuild/stage step (RV imports the mode by bare name via PyImport_Import).
+    # A package dir is src/plugins/rv-packages/<modeName>/ that actually exists.
+    pkg_dirs = [
+        os.path.join(REPO_ROOT, "src", "plugins", "rv-packages", n)
+        for n in mode_names
+    ]
+    pkg_dirs = [d for d in pkg_dirs if os.path.isdir(d)]
+    if pkg_dirs:
+        prior = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = os.pathsep.join(pkg_dirs + ([prior] if prior else []))
     # Root/container safety (harmless otherwise).
     env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
