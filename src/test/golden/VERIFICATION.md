@@ -158,3 +158,4 @@ A slice of a Python port is accepted when:
 ## Allowed Operations
 
 1. No file under golden/ shall be modified
+2. No more than 15 attempts at running all tests is allowed (15 iterations)
