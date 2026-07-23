@@ -98,13 +98,26 @@ def main() -> int:
         ok_all = False
         results.append(f"behavioral: missing session.rv (golden={os.path.isfile(g_sess)}, actual={os.path.isfile(a_sess)})")
 
-    g_png = os.path.join(args.golden_dir, "panel.png")
-    a_png = os.path.join(args.actual_dir, "panel.png")
-    if os.path.isfile(g_png) and os.path.isfile(a_png):
+    # Compare every PNG artifact present in the golden dir (not just
+    # panel.png -- popup-menu scenarios grab their own top-level window,
+    # e.g. configmenu.png). A golden PNG with no matching actual PNG is a
+    # hard FAIL, not a silently-skipped gate: a broken port that can't find
+    # the widget (and so never writes the artifact) must not pass.
+    golden_pngs = sorted(
+        f for f in os.listdir(args.golden_dir) if f.endswith(".png")
+    ) if os.path.isdir(args.golden_dir) else []
+    for name in golden_pngs:
+        g_png = os.path.join(args.golden_dir, name)
+        a_png = os.path.join(args.actual_dir, name)
+        if not os.path.isfile(a_png):
+            ok_all = False
+            results.append(f"pixel: missing actual {name} (golden exists)")
+            continue
         ok, msg = compare_png(g_png, a_png, args.dmax)
         ok_all &= ok
-        results.append(msg)
-    # (If no golden PNG yet, the pixel gate simply isn't exercised for this scenario.)
+        results.append(f"[{name}] {msg}")
+    # (If the golden dir has no PNGs at all, the pixel gate simply isn't
+    # exercised for this scenario.)
 
     print("\n".join(results))
     print("RESULT:", "PASS" if ok_all else "FAIL")

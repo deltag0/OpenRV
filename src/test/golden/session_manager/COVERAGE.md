@@ -28,6 +28,15 @@ not the *UI trigger* (click/drag/menu). So an item is **🟡** when its outcome 
 its specific trigger isn't exercised. Behaviors with no equivalent test are dropped
 (see [Dropped](#dropped-no-equivalent-golden-test)), so every row is ✅ or 🟡.
 
+A growing set of items now have a **real-click** scenario written (using
+`QTest.mouseClick`/`QTest.keyClicks` via `harness/qt_scenario_utils.py` — plain clicks are
+not subject to the drag/drop limitation in §G, only the drag *gesture* is blocked
+headlessly), closing the "trigger not exercised" half of 🟡. Where noted **⬜ baseline
+capture pending**, the scenario exists and is believed correct but has no committed
+`golden/<id>/` yet (requires the pinned Linux + Xvfb + software-Mesa path — see
+`../VERIFICATION.md`); the row's status marker reflects only what has a committed golden
+today and should flip once captured.
+
 Scenarios and their committed baselines live in `scenarios/` + `golden/`; the tables
 below name the scenario pinning each behavior and its status.
 
@@ -84,11 +93,11 @@ widget exists and the graph matches, then advance through the other scenarios.
 
 | # | Behavior | Ref | Gate | Status | Scenario |
 |---|---|---|---|---|---|
-| C1 | Add ▸ Sequence/Stack/Switch/Folder/Layout/Retime create the right node type | 3348-3353,3382-3387 | B+P | ✅ | `sm_create_views` |
+| C1 | Add ▸ Sequence/Stack/Switch/Folder/Layout/Retime create the right node type | 3348-3353,3382-3387 | B+P | ✅ | `sm_create_views`; real `addButton` click + "New Viewable" menu: `sm_button_add_menu` (⬜ baseline capture pending) |
 | C2 | Add ▸ Color / OCIO / Dynamic (Dynamic gated by `RV_ENABLE_DYNAMIC_NODE`) | 3365-3370 | B | ✅ | `sm_create_nodes` (⚠ Mu bug: OCIO action uses `"RVOCIO"`; real type is `"OCIO"`) |
 | C3 | Selected nodes become inputs of the new node; auto-named (`renameByType`) | 2522-2538,2281-2314 | B | 🟡 | `sm_create_views` (inputs pinned; auto-name not) |
 | C5 | Create Image dialog: SRGB/ACES charts, color bars, black, color, blank → movieproc source | 2564-2681 | B | ✅ | `sm_create_image` (movieproc outcome; modal dialog UI not gated) |
-| C8 | New Folder: empty / from selection (reparent) / from copy | 2699-2753 | B | ✅ | `sm_folders` |
+| C8 | New Folder: empty / from selection (reparent) / from copy | 2699-2753 | B | ✅ | `sm_folders`; real `folderButton` click + "From Selection", real media: `sm_button_folder_menu` (⬜ baseline capture pending -- macOS smoke-testing hit an unexplained hang clicking `folderButton`'s popup itself, unproven on the Linux target; see scenario docstring) |
 | C9 | Created group made current via `setViewNode` | 2534,2752 | B | ✅ | `sm_create_views` |
 
 ## D. View switching & navigation
@@ -98,7 +107,7 @@ widget exists and the graph matches, then advance through the other scenarios.
 | D1 | Double-click tree node → `setViewNode` | 1343-1373 | B | 🟡 | `sm_view_switch` (outcome pinned; click not) |
 | D2 | Single-click top-level selection → becomes current view | 1466-1484 | B | 🟡 | `sm_view_switch` (outcome pinned; click not) |
 | D3 | Status-column click views a sub-component (`setImageRequest`) | 1375-1389,530 | B | 🟡 | `sm_subcomponents` (request.imageComponent pinned; click not) |
-| D4 | Prev/Next nav buttons → `previous/nextViewNode` | 3085-3101 | B+P | 🟡 | `sm_nav` (nav outcome pinned; button not) |
+| D4 | Prev/Next nav buttons → `previous/nextViewNode` | 3085-3101 | B+P | 🟡 | `sm_nav` (nav outcome pinned); real `prevViewButton`/`nextViewButton` clicks: `sm_button_nav_prev_next` (⬜ baseline capture pending) |
 | D5 | Nav buttons enabled/label state (`viewLabel` + prev/next enabled) | 1565-1574 | P | ✅ | `sm_nav` (nav-panel pixels) |
 | D7 | `after/before-graph-view-change` keep tree ✔, nav, tab, edit-UI in sync | 1576-1637 | B+P | ✅ | `sm_view_switch` |
 
@@ -107,9 +116,9 @@ widget exists and the graph matches, then advance through the other scenarios.
 | # | Behavior | Ref | Gate | Status | Scenario |
 |---|---|---|---|---|---|
 | E1 | Inputs list reflects `nodeConnections` of the current view node | 1486-1534 | B+P | ✅ | `sm_inputs` |
-| E3 | Reorder up/down → `setInputs` new order | 2806-2860 | B | 🟡 | `sm_inputs_reorder` (order pinned; button not) |
-| E4 | Sort A-Z / Z-A → `setInputs` sorted (folders also `setSortKeyInParent`) | 2871-2930 | B | 🟡 | `sm_inputs_sort` (sorted order pinned; button not) |
-| E5 | Delete input → `setInputs` minus selection | 3022-3052 | B | 🟡 | `sm_inputs_delete` (outcome pinned; button not) |
+| E3 | Reorder up/down → `setInputs` new order | 2806-2860 | B | 🟡 | `sm_inputs_reorder` (order pinned); real media: `sm_media_reorder_command`; real `orderUpButton`/`orderDownButton` click + real media: `sm_media_reorder_button` (⬜ baseline capture pending) |
+| E4 | Sort A-Z / Z-A → `setInputs` sorted (folders also `setSortKeyInParent`) | 2871-2930 | B | 🟡 | `sm_inputs_sort` (sorted order pinned); real `sortAscButton`/`sortDescButton` click + real media: `sm_button_sort_buttons` (⬜ baseline capture pending) |
+| E5 | Delete input → `setInputs` minus selection | 3022-3052 | B | 🟡 | `sm_inputs_delete` (outcome pinned); real `inputsDeleteButton` click + real media: `sm_media_inputs_delete_button` (⬜ baseline capture pending) |
 | E6 | Inputs list disabled for source-type view node | 1594-1597 | P | ✅ | `sm_view_switch` (final view is a source) |
 
 ## F. Edit tab & per-view edit modes
@@ -162,20 +171,32 @@ Provided by `local_thumbnail_gen.py` (a separate `load: immediate` Python mode) 
 
 | # | Behavior | Ref | Gate | Status | Scenario |
 |---|---|---|---|---|---|
+| H1 | Real thumbnail replaces fallback icon once `rvio` preview job completes | 1877-1888,3188 | P | ⬜ | `sm_media_load` (baseline capture pending) |
+| H2 | Real filmstrip becomes available alongside the thumbnail | 1883-1888 | P | ⬜ | `sm_media_load` (baseline capture pending) |
 | H4 | Fallback `fallback_thumbnail.png` until real preview arrives | 3322,1867 | P | ✅ | `tree_readonly` |
+| H5 | `session-manager-preview-available` quiesce point: capture is deterministic once every source's thumbnail+filmstrip files exist | 3188 | P | ⬜ | `sm_media_load` (baseline capture pending) |
 
 > **Determinism rule:** default pilot fixtures use media-free sources and capture with
-> the fallback icon (H4), which is deterministic. Real-preview scenarios (H1/H2/H5) must
-> either quiesce on `session-manager-preview-available` for every source before grabbing,
-> or crop the preview column out of the PNG before diffing.
+> the fallback icon (H4), which is deterministic. Real-preview scenarios (H1/H2/H5) now
+> quiesce via `_sm_common.quiesce_real_previews`, which polls
+> `session-manager-get-thumbnail-path`/`-filmstrip-path` for every source until both exist
+> on disk (raising on timeout) before any capture. **Open risk, not yet verified:** this
+> assumes `local_thumbnail_gen.py`'s `rvio` subprocess encode is bit-reproducible run-to-run
+> the same way software-Mesa GL rendering is — untested from this machine. Before trusting
+> `-dmax 0` on `sm_media_load`'s `panel.png`, run it twice on the capture machine and
+> `rmsImageDiff -cmp -dmax 0 -m` the two outputs directly; if not bit-identical, do not
+> loosen `dmax` (policy) — instead crop/placeholder the preview thumbnail sub-region out of
+> the capture before diffing, per the option already documented above.
 
 ## I. Toolbar buttons & context menus
 
 | # | Behavior | Ref | Gate | Status | Scenario |
 |---|---|---|---|---|---|
 | I1 | Button bar: Create View / Folder / Delete / Edit Info / Configure / Select Current | 3280-3345 | P | 🟡 | `tree_readonly` (rendered) |
-| I7 | Inline rename (Edit key / Edit Info button) → `setUIName` | 1449-1463,2798 | B | 🟡 | `sm_rename` (setUIName pinned; inline-edit trigger not) |
-| I8 | Delete View: `removeInput` if multi-parent folder child, else `deleteNode` | 2755-2784 | B | 🟡 | `sm_delete` (deleteNode pinned; multi-parent removeInput + button not) |
+| I7 | Inline rename (Edit key / Edit Info button, objectName `renameButton`) → `setUIName` | 1449-1463,2798 | B | 🟡 | `sm_rename` (setUIName pinned); real `renameButton` click + inline `QLineEdit` type/commit: `sm_button_rename_inline` (⬜ baseline capture pending — highest-risk scenario in this batch; if unreliable headlessly, stays 🟡 with this note as the recorded justification per `../VERIFICATION.md`'s DoD rule 3, not silently forced to pass) |
+| I8 | Delete View: `removeInput` if multi-parent folder child, else `deleteNode` | 2755-2784 | B | 🟡 | `sm_delete` (deleteNode pinned); real media: `sm_media_delete_command`; real `deleteButton` click, single-parent: `sm_media_delete_button`; real `deleteButton` click, multi-parent (`removeInput` branch, previously untested): `sm_button_delete_multiparent` (⬜ baseline capture pending) |
+| I9 | Select Current button (`selectCurrentButton`) → `selectViewableNode` re-syncs tree selection to the current view node (does not change the view) | 1536-1563 | P | ⬜ | `sm_button_select_current` (baseline capture pending) |
+| I10 | Configure button (`configButton`) popup: startup radio group + "Show Source Previews" toggle | 3451-3474 | P | ⬜ | `sm_button_config_menu` (pixel-only — settings aren't in the session dump; baseline capture pending) |
 
 ## J. Settings, persistence & private properties
 
@@ -325,19 +346,31 @@ goldens are captured from Mu and re-run against Python.
 
 Behaviors with no deterministic graph/pixel outcome and no command equivalent were
 removed from the tables rather than tracked, so every row above is ✅ or 🟡. Dropped:
-modal dialogs & popup menus (New-Node / Create-Image dialogs; New Viewable / Folder /
-Config / context menus — their *outcomes* are pinned by the create/folder/delete/rename
-scenarios); settings persistence (`showOnStartup`, `previewsEnabled`,
-`show_session_manager`, `General/fps` — not in the session dump); async live previews
-(thumbnail/filmstrip render + `preview-available`); and event-sent / timing checks
-(`load-ui` sent, progressive-loading suppression). The port still implements these;
+modal dialogs (New-Node / Create-Image dialogs — their *outcomes* are pinned by the
+create/folder/delete/rename scenarios; the New Viewable / New Folder / Config **toolbar
+submenus** are no longer dropped, see C1/C8/I10 and `sm_button_add_menu`/
+`sm_button_folder_menu`/`sm_button_config_menu`); settings persistence (`showOnStartup`,
+`previewsEnabled`, `show_session_manager`, `General/fps` — not in the session dump; I10
+pins the popup's pixel appearance but not the persisted value); and event-sent / timing
+checks (`load-ui` sent, progressive-loading suppression). Async live previews
+(thumbnail/filmstrip render + `preview-available`) are no longer dropped either — see
+§H (H1/H2/H5) and `sm_media_load`. The port still implements the remaining dropped items;
 they're verified by inspection, not golden.
 
 ## Backlog
 
-Empty — every golden-gateable behavior has a committed baseline (tables above); the rest
-are listed under [Dropped](#dropped-no-equivalent-golden-test). New scenarios, if needed,
-go under `scenarios/` with a golden under `golden/<id>/`.
+Baseline capture pending for the real-media/real-button scenarios added to close the
+gaps above (14 new scenario files under `scenarios/`: `sm_media_*`, `sm_button_*`) —
+requires running `run_scenario.py --impl mu` on the pinned Linux + Xvfb + software-Mesa
+path per `../VERIFICATION.md` (not available on macOS; a Docker `rockylinux:8`/`9`
+container matching `ci-linux.yml` is plausible but requires building RV from scratch
+inside it first — a separate follow-up). Until captured, rows referencing these
+scenarios show ⬜ or an unchanged 🟡, never ✅ — see the per-row notes above. New
+real-media fixtures live in `fixtures/` (regenerate via `fixtures/regenerate_fixtures.sh`,
+overridable per-scenario with `SM_TEST_IMAGE_FIXTURE`/`SM_TEST_MOVIE_FIXTURE`). Beyond
+this, every other golden-gateable behavior has a committed baseline (tables above); the
+rest are listed under [Dropped](#dropped-no-equivalent-golden-test). New scenarios, if
+needed, go under `scenarios/` with a golden under `golden/<id>/`.
 
 ---
 

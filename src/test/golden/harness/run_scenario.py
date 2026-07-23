@@ -87,6 +87,11 @@ _PYEVAL = (
     "except BaseException:\n"
     "    traceback.print_exc()\n"
     "    _rc = 3\n"
+    "    try:\n"
+    "        with open(os.path.join(os.environ['GOLDEN_OUT'], 'traceback.txt'), 'w') as _f:\n"
+    "            traceback.print_exc(file=_f)\n"
+    "    except Exception:\n"
+    "        pass\n"
     "sys.stdout.flush(); sys.stderr.flush()\n"
     "os._exit(_rc)\n"
 )
@@ -99,6 +104,13 @@ def main() -> int:
     ap.add_argument("--rv", default=DEFAULT_RV, help="Path to the rv launcher")
     ap.add_argument("--timeout", type=int, default=180, help="Seconds before giving up")
     ap.add_argument("--screen", default="1280x1024x24", help="Xvfb screen geometry")
+    ap.add_argument(
+        "--no-xvfb",
+        action="store_true",
+        help="Skip the xvfb-run wrapper and launch --rv directly. Not for gated "
+        "captures (loses the pinned software-Mesa determinism) -- only for "
+        "smoke-testing scenario logic on a platform without Xvfb (e.g. macOS).",
+    )
     ap.add_argument(
         "--impl",
         choices=("mu", "python"),
@@ -150,16 +162,25 @@ def main() -> int:
         pkg_dir = package_dir_for_mode(name)
         if pkg_dir and pkg_dir not in pkg_dirs:
             pkg_dirs.append(pkg_dir)
-    if pkg_dirs:
-        prior = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = os.pathsep.join(pkg_dirs + ([prior] if prior else []))
+    # Scenarios are exec()'d with no __file__, so they can't find sibling
+    # modules (_sm_common.py) or the shared harness (qt_scenario_utils.py) on
+    # their own -- always put both on PYTHONPATH, not just when pkg_dirs is
+    # non-empty.
+    scenario_dir = os.path.dirname(scenario)
+    prior = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join(
+        [scenario_dir, _HERE] + pkg_dirs + ([prior] if prior else [])
+    )
     # Root/container safety (harmless otherwise).
     env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
-    cmd = [
-        "xvfb-run", "-a", "-s", f"-screen 0 {args.screen}",
-        args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL,
-    ]
+    if args.no_xvfb:
+        cmd = [args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL]
+    else:
+        cmd = [
+            "xvfb-run", "-a", "-s", f"-screen 0 {args.screen}",
+            args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL,
+        ]
     impl_note = ", ".join(
         f"{MODE_IMPL_ENV_PREFIX}{n}={env.get(f'{MODE_IMPL_ENV_PREFIX}{n}', 'mu')}"
         for n in mode_names
