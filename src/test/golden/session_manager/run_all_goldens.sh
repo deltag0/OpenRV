@@ -39,6 +39,8 @@ SKIP_IDS=(
     sm_mp4_all
     sm_reopen_after_hide
     sm_toggle_diag
+    sm_thumb_diag
+    sm_thumb_diag2
 )
 
 should_skip() {

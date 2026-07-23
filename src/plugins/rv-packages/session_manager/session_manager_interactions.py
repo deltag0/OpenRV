@@ -800,7 +800,7 @@ class SessionManagerInteractions:
 
     def _main_win_vis_timeout(self) -> None:
         try:
-            if self._dock_widget is None:
+            if self._dock_widget is None or self._suppress_visibility_sync:
                 return
             m = qtutils.sessionWindow()
             if m is not None and m.isMinimized():

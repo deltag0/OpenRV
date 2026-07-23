@@ -269,15 +269,16 @@ class: ModeManagerMode : MinorMode
 
     method: preferPythonImpl (bool; string modeName)
     {
-        // session_manager ships as Python-only; never load a stale .mu from another path.
-        if (modeName == "session_manager") return true;
-
         let perMode = getenv("RV_MODE_IMPL_%s" % modeName);
         if (perMode neq nil)
         {
             if (perMode == "python") return true;
             if (perMode == "mu") return false;
         }
+
+        // Default: Python for modes that no longer ship a .mu implementation.
+        if (modeName == "session_manager") return true;
+        if (modeName == "local_thumbnail_gen") return true;
 
         let list = getenv("RV_PREFER_PYTHON_MODES");
         if (list neq nil)

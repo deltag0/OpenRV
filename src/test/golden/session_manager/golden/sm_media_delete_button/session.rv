@@ -319,7 +319,7 @@ defaultSequence : RVSequenceGroup (1)
 
     timing
     {
-        int retimeInputs = 0
+        int retimeInputs = 1
     }
 
     markers
@@ -413,7 +413,7 @@ defaultSequence_rt_sourceGroup000001 : RVRetime (1)
 
     output
     {
-        float fps = 8
+        float fps = 24
     }
 
     warp
@@ -446,14 +446,14 @@ defaultSequence_sequence : RVSequence (1)
     {
         int size = [ 64 48 ]
         float fps = 24
-        int interactiveSize = 0
-        int autoSize = 0
+        int interactiveSize = 1
+        int autoSize = 1
     }
 
     mode
     {
-        int autoEDL = 0
-        int useCutInfo = 0
+        int autoEDL = 1
+        int useCutInfo = 1
         int supportReversedOrderBlending = 1
     }
 

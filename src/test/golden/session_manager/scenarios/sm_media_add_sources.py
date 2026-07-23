@@ -31,6 +31,7 @@ log("nodes:", rvc.nodes())
 
 panel = sm.open_session_manager_panel(log=log)
 sm.quiesce_real_previews(source_nodes, log=log, timeout_ms=120000)
+sm.assert_preview_paths_ready(source_nodes, log=log)
 
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)
 log("saved session.rv")

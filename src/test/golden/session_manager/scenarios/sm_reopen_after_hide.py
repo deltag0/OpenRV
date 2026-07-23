@@ -50,6 +50,12 @@ log("after hide: active", mode._active if mode else None, "visible", dock.isVisi
 for i in range(3):
     rvc.sendInternalEvent("key-down--x", "")
     pump(800)
-    log(f"reopen attempt {i+1}: active", mode._active, "visible", dock.isVisible() if dock else None)
+    mode = sm.theMode()
+    log(
+        f"reopen attempt {i+1}: active",
+        mode._active if mode else None,
+        "visible",
+        dock.isVisible() if dock else None,
+    )
 
 diag.close()

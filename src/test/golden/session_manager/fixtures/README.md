@@ -43,5 +43,6 @@ python3 src/test/golden/harness/run_scenario.py \
 
 Scenarios:
 
+- `sm_meridian_mp4_load.py` — pinned Meridian clip + addSources + preview.png pixel gate (requires `fixtures/mp4.env`)
 - `sm_mp4_load.py` — one MP4 + preview quiesce (golden-capable)
 - `sm_mp4_all.py` — every `*.mp4` in `SM_TEST_MP4_DIR` (integration only)

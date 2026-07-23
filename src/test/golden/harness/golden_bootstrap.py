@@ -22,14 +22,14 @@ def ensure_source_setup() -> None:
 
 
 def ensure_local_thumbnail_gen() -> None:
-    """Activate local_thumbnail_gen (load:immediate but often inactive in -pyeval)."""
+    """Ensure local_thumbnail_gen is registered and active (idempotent)."""
     try:
         import local_thumbnail_gen
 
-        mode = local_thumbnail_gen.createMode()
-        if mode is not None and not getattr(mode, "_active", False):
-            import rv.commands as rvc
+        local_thumbnail_gen.createMode()
+        import rv.commands as rvc
 
+        if not rvc.isModeActive("local_thumbnail_gen"):
             rvc.activateMode("local_thumbnail_gen")
     except Exception:
         pass
@@ -38,7 +38,9 @@ def ensure_local_thumbnail_gen() -> None:
 def bootstrap_from_env() -> None:
     if os.environ.get("GOLDEN_SOURCE_SETUP", "0") == "1":
         ensure_source_setup()
-    if os.environ.get("GOLDEN_THUMBNAIL_GEN", "1") == "1":
+    # Default off: session_manager.activate() ensures local_thumbnail_gen.
+    # Set GOLDEN_THUMBNAIL_GEN=1 only to test the legacy bootstrap path.
+    if os.environ.get("GOLDEN_THUMBNAIL_GEN", "0") == "1":
         ensure_local_thumbnail_gen()
 
 

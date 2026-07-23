@@ -727,6 +727,8 @@ class LocalThumbnailGen(rvtypes.MinorMode):
 
 def createMode() -> LocalThumbnailGen:
     global the_mode
+    if the_mode is not None:
+        return the_mode
     the_mode = LocalThumbnailGen()
     return the_mode
 

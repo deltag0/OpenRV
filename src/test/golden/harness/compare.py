@@ -34,6 +34,8 @@ RMS_IMAGE_DIFF = os.path.join(REPO_ROOT, "_build", "stage", "app", "bin", "rmsIm
 _VOLATILE_PROP_RE = re.compile(
     r"^\s*(string sessionName|int currentFrame|int\[\] marks)\b"
 )
+# Absolute media paths vary by machine; canonicalize to a stable token.
+_MOVIE_LINE_RE = re.compile(r'^(\s*string movie = ")([^"]+)("\s*)$')
 
 
 def normalize_gto(text: str) -> str:
@@ -43,8 +45,11 @@ def normalize_gto(text: str) -> str:
     for line in text.splitlines():
         if _VOLATILE_PROP_RE.match(line):
             continue
-        # Make machine-specific absolute paths portable.
-        line = line.replace(REPO_ROOT, "<REPO>").replace(home, "<HOME>")
+        m = _MOVIE_LINE_RE.match(line)
+        if m and (m.group(2).endswith(".mp4") or m.group(2).endswith(".mov")):
+            line = '%s<MP4_FIXTURE>%s' % (m.group(1), m.group(3))
+        else:
+            line = line.replace(REPO_ROOT, "<REPO>").replace(home, "<HOME>")
         out_lines.append(line)
     return "\n".join(out_lines) + "\n"
 

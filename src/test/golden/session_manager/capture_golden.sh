@@ -16,6 +16,14 @@ SCENARIOS="$PKG/scenarios"
 GOLDEN="$PKG/golden"
 TIMEOUT="${TIMEOUT:-600}"
 
+# Optional local media paths (see fixtures/mp4.env.example)
+if [ -f "$PKG/fixtures/mp4.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$PKG/fixtures/mp4.env"
+    set +a
+fi
+
 # Integration-only: no committed golden baseline (env-specific, multi-hour).
 SKIP_IDS=(
     sm_mp4_all

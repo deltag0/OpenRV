@@ -30,9 +30,9 @@ rv : RVSession (4)
 
     session
     {
-        string viewNode = "defaultSequence"
-        int[2] range = [ [ 1 26 ] ]
-        int[2] region = [ [ 1 26 ] ]
+        string viewNode = "Folder"
+        int[2] range = [ [ 1 2 ] ]
+        int[2] region = [ [ 1 2 ] ]
         float fps = 24
         int realtime = 0
         int inc = 1
@@ -46,7 +46,7 @@ connections : connection (2)
 {
     evaluation
     {
-        string[2] connections = [ [ "sourceGroup000000" "Folder" ] [ "sourceGroup000001" "Folder" ] [ "sourceGroup000000" "defaultLayout" ] [ "sourceGroup000001" "defaultLayout" ] [ "viewGroup" "defaultOutputGroup" ] [ "sourceGroup000000" "defaultSequence" ] [ "sourceGroup000001" "defaultSequence" ] [ "sourceGroup000000" "defaultStack" ] [ "sourceGroup000001" "defaultStack" ] [ "defaultSequence" "viewGroup" ] ]
+        string[2] connections = [ [ "sourceGroup000000" "Folder" ] [ "sourceGroup000001" "Folder" ] [ "sourceGroup000000" "defaultLayout" ] [ "sourceGroup000001" "defaultLayout" ] [ "viewGroup" "defaultOutputGroup" ] [ "sourceGroup000000" "defaultSequence" ] [ "sourceGroup000001" "defaultSequence" ] [ "sourceGroup000000" "defaultStack" ] [ "sourceGroup000001" "defaultStack" ] [ "Folder" "viewGroup" ] ]
         string roots = "defaultOutputGroup"
     }
 
@@ -60,12 +60,19 @@ Folder : RVFolderGroup (1)
 {
     ui
     {
-        string name = "Folder"
+        string name = "Folder of bars_frame.jpg and bars_clip.mp4"
     }
 
     mode
     {
         string viewType = "switch"
+    }
+
+    session
+    {
+        float fps = 24
+        int marks = [ ]
+        int frame = 1
     }
 }
 
@@ -367,6 +374,11 @@ defaultSequence : RVSequenceGroup (1)
         int marks = [ ]
         int frame = 1
         float fps = 24
+    }
+
+    sm_state
+    {
+        int tab = 0
     }
 }
 

@@ -215,7 +215,7 @@ class ThumbnailWidget(QLabel):
         self.setPixmap(pixmap)
 
     def load(self, image: QtGui.QImage) -> None:
-        pixmap = QPixmap.fromImage(image)
+        pixmap = QPixmap.fromImage(image, Qt.AutoColor)
         if not pixmap.isNull():
             self.setPixmap(pixmap)
 
@@ -248,7 +248,7 @@ class FilmstripWidget(QLabel):
         frame = self._strip.copy(
             QtCore.QRect(frame_x, 0, self._frame_width, self._strip.height())
         )
-        self.setPixmap(QPixmap.fromImage(frame))
+        self.setPixmap(QPixmap.fromImage(frame, Qt.AutoColor))
 
     def mouseMoveEvent(self, event) -> None:
         pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
@@ -257,14 +257,17 @@ class FilmstripWidget(QLabel):
 
 
 class SourcePreviewWidget(QWidget):
+    """Thumbnail + filmstrip stacked in the same rect; filmstrip on hover (Mu parity)."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        self.setObjectName("sourcePreviewWidget")
+        self.setAttribute(Qt.WA_Hover, True)
         self._thumbnail = ThumbnailWidget(self)
+        self._thumbnail.setGeometry(QtCore.QRect(0, 0, SOURCE_PREVIEW_WIDTH, SOURCE_PREVIEW_HEIGHT))
+        self._thumbnail.show()
         self._filmstrip = FilmstripWidget(self)
-        layout.addWidget(self._thumbnail)
-        layout.addWidget(self._filmstrip)
+        self._filmstrip.setGeometry(QtCore.QRect(0, 0, SOURCE_PREVIEW_WIDTH, SOURCE_PREVIEW_HEIGHT))
         self._filmstrip.hide()
 
     def setFallback(self, pixmap: QPixmap) -> None:
@@ -275,9 +278,20 @@ class SourcePreviewWidget(QWidget):
 
     def loadStrip(self, image: QtGui.QImage) -> None:
         self._filmstrip.load(image)
-        if self._filmstrip.isLoaded():
-            self._filmstrip.show()
-            self._filmstrip.showFrameAtX(0)
+
+    def event(self, event) -> bool:
+        if event.type() == QtCore.QEvent.HoverEnter:
+            if self._filmstrip.isLoaded():
+                cursor = QtGui.QCursor.pos()
+                self._filmstrip.showFrameAtX(self.mapFromGlobal(cursor).x())
+                self._filmstrip.show()
+                self._thumbnail.hide()
+            return True
+        if event.type() == QtCore.QEvent.HoverLeave:
+            self._filmstrip.hide()
+            self._thumbnail.show()
+            return True
+        return super().event(event)
 
 
 class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
@@ -321,6 +335,7 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         self._editors = []
         self._ui_tree_widget = None
         self._building_panel = False
+        self._suppress_visibility_sync = False
         self._src_node_keys: list[str] = []
         self._grp_node_values: list[str] = []
 
@@ -897,7 +912,7 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         layout.setSpacing(SOURCE_ROW_SPACING)
 
         preview = SourcePreviewWidget(widget)
-        preview.setFixedSize(QSize(SOURCE_PREVIEW_WIDTH, SOURCE_ROW_HEIGHT))
+        preview.setFixedSize(QSize(SOURCE_PREVIEW_WIDTH, SOURCE_PREVIEW_HEIGHT))
         fallback = self._fallback_source_icon.pixmap(
             QSize(SOURCE_PREVIEW_WIDTH, SOURCE_PREVIEW_HEIGHT)
         )
@@ -1244,6 +1259,7 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
     def _after_progressive_loading(self, event) -> None:
         event.reject()
         self._progressive_loading_in_progress = False
+        self._ensure_local_thumbnail_gen()
         self.update_tree()
         node = commands.viewNode()
         if node is not None:
@@ -1351,11 +1367,7 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         if not self._previews_enabled:
             return
         source_node = event.contents()
-        node = None
-        for i, key in enumerate(self._src_node_keys):
-            if key == source_node:
-                node = self._grp_node_values[i]
-                break
+        node = self._group_for_source_node(source_node)
         if node is None:
             return
         try:
@@ -1402,32 +1414,79 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
                     sitem.setText(status)
             self._apply_node_status(child, node, status)
 
+    def _ensure_local_thumbnail_gen(self) -> None:
+        """Wake local thumbnail generation (mode loads via PACKAGE ``load: immediate``).
+
+        Do not call ``local_thumbnail_gen.createMode()`` here — mode_manager owns
+        registration.  Eager ``createMode`` + ``activateMode`` from inside
+        ``activate()`` re-entered mode_manager and could prevent the panel from
+        opening.  Golden tests use ``_sm_common.ensure_local_thumbnail_gen()``.
+        """
+        try:
+            if not commands.isModeActive("local_thumbnail_gen"):
+                commands.activateMode("local_thumbnail_gen")
+            if self._previews_enabled:
+                commands.sendInternalEvent("session-manager-previews-enabled", "")
+        except Exception as exc:
+            print("session_manager: local_thumbnail_gen unavailable: %s" % exc)
+
+    def _deferred_thumbnail_setup(self) -> None:
+        if self._active:
+            self._ensure_local_thumbnail_gen()
+
+    def _group_for_source_node(self, source_node: str) -> str | None:
+        try:
+            group = commands.nodeGroup(source_node)
+            if group and commands.nodeType(group) == "RVSourceGroup":
+                return group
+        except Exception:
+            pass
+        for i, key in enumerate(self._src_node_keys):
+            if key == source_node:
+                return self._grp_node_values[i]
+        return None
+
     def activate(self) -> None:
         self._active = True
-        self._ensure_panel()
-        if self._dock_widget is None:
-            print("session_manager: activate failed — panel not built")
-            self._active = False
-            try:
-                import rv.extra_commands as ec
-                ec.displayFeedback("Session Manager: panel failed to open (see rv.bin.log)", 5.0)
-            except Exception:
-                pass
-            return
-        self._attach_dock()
-        self._dock_widget.show()
-        self._dock_widget.raise_()
-        self.update_tree()
+        self._suppress_visibility_sync = True
         try:
-            self._update_nav_ui()
-            self._restore_tab_state()
-        except RuntimeError:
-            pass
-        node = commands.viewNode()
-        if node is not None:
-            self.update_inputs(node)
-            commands.sendInternalEvent("session-manager-load-ui", node)
-        self._sync_panel_width()
+            self._ensure_panel()
+            if self._dock_widget is None:
+                print("session_manager: activate failed — panel not built")
+                self._active = False
+                try:
+                    commands.deactivateMode(MODE_NAME)
+                except Exception:
+                    pass
+                try:
+                    import rv.extra_commands as ec
+                    ec.displayFeedback(
+                        "Session Manager: panel failed to open (see rv.bin.log)", 5.0
+                    )
+                except Exception:
+                    pass
+                return
+            self._attach_dock()
+            self._dock_widget.show()
+            self._dock_widget.raise_()
+            self.update_tree()
+            try:
+                self._update_nav_ui()
+                self._restore_tab_state()
+            except RuntimeError:
+                pass
+            node = commands.viewNode()
+            if node is not None:
+                self.update_inputs(node)
+                commands.sendInternalEvent("session-manager-load-ui", node)
+            self._sync_panel_width()
+        finally:
+            self._suppress_visibility_sync = False
+        # After the dock is visible — never block panel open on thumbnail setup.
+        if self._lazy_update_timer is not None:
+            QTimer.singleShot(0, self._deferred_thumbnail_setup)
+        else:
+            self._deferred_thumbnail_setup()
 
     def deactivate(self) -> None:
         self._active = False

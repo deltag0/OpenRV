@@ -92,6 +92,74 @@ def resolve_mp4_fixture() -> str:
     )
 
 
+# Pinned Meridian integration clip (override with SM_TEST_MP4_FIXTURE).
+MERIDIAN_DEFAULT_CLIP = "Meridian_-_Clip_0043_SHOTREF.mp4"
+
+
+def resolve_meridian_mp4_fixture() -> str:
+    """Single Meridian MP4 for pixel-parity goldens (``sm_meridian_mp4_load``).
+
+    Resolution order:
+      1. ``SM_TEST_MP4_FIXTURE`` if set and exists
+      2. ``SM_TEST_MP4_DIR``/``MERIDIAN_DEFAULT_CLIP``
+      3. ``$HOME/Downloads/Meridian-PS-Cloth/.../MERIDIAN_DEFAULT_CLIP`` if present
+      4. ``resolve_mp4_fixture()`` fallback (bars_clip.mp4)
+    """
+    if MP4_FIXTURE and os.path.isfile(MP4_FIXTURE):
+        return MP4_FIXTURE
+    candidates = []
+    if MP4_DIR:
+        candidates.append(os.path.join(MP4_DIR, MERIDIAN_DEFAULT_CLIP))
+    candidates.append(
+        os.path.expanduser(
+            "~/Downloads/Meridian-PS-Cloth/Meridian-PS-Cloth/"
+            "Meridian-Cloth-PS-V001/%s" % MERIDIAN_DEFAULT_CLIP
+        )
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return resolve_mp4_fixture()
+
+
+def ensure_local_thumbnail_gen(log=print):
+    """Register/activate local_thumbnail_gen (required for Mu session_manager runs)."""
+    import rv.commands as rvc
+
+    try:
+        import local_thumbnail_gen
+
+        local_thumbnail_gen.createMode()
+        if not rvc.isModeActive("local_thumbnail_gen"):
+            rvc.activateMode("local_thumbnail_gen")
+        log("local_thumbnail_gen active:", rvc.isModeActive("local_thumbnail_gen"))
+    except Exception as exc:
+        log("ensure_local_thumbnail_gen failed:", exc)
+        raise
+
+
+def grab_first_source_preview(panel, out_path, log=print, settle_ms=300):
+    """Grab the 80x45 thumbnail widget (``sourcePreviewWidget`` or Mu equivalent)."""
+    from qt_scenario_utils import grab_widget_png
+
+    previews = panel.findChildren(QtWidgets.QWidget, "sourcePreviewWidget")
+    if not previews:
+        rows = panel.findChildren(QtWidgets.QWidget, "sourceRowWidget")
+        if rows:
+            for child in rows[0].findChildren(QtWidgets.QWidget):
+                if child.width() == 80 and child.height() == 45:
+                    previews = [child]
+                    break
+    if not previews:
+        raise AssertionError(
+            "grab_first_source_preview: no 80x45 preview widget found"
+        )
+    preview = previews[0]
+    ok, w, h = grab_widget_png(preview, out_path, settle_ms=settle_ms)
+    log("preview.png saved:", ok, "size", w, "x", h, "from", preview.objectName())
+    return ok, w, h
+
+
 # Kept alive at module scope deliberately: a `qtutils.sessionWindow()`
 # reference that only lives as a local inside a function goes out of scope
 # (and gets garbage-collected) the instant that function returns. Empirically
@@ -145,6 +213,11 @@ def open_session_manager_panel(log=print, retries=6, retry_pump_ms=300):
     rather than trusting the first reference.
     """
     import rv.commands as rvc
+
+    try:
+        ensure_local_thumbnail_gen(log=log)
+    except Exception as exc:
+        log("open_session_manager_panel: thumbnail gen unavailable:", exc)
 
     try:
         rvc.sendInternalEvent("key-down--x", "")
@@ -364,6 +437,8 @@ def quiesce_real_previews(source_nodes, timeout_ms=20000, poll_ms=250, log=print
     """
     import rv.commands as rvc
 
+    ensure_local_thumbnail_gen(log=log)
+
     deadline = time.time() + timeout_ms / 1000.0
     pending = set(source_nodes)
     while pending and time.time() < deadline:
@@ -380,6 +455,26 @@ def quiesce_real_previews(source_nodes, timeout_ms=20000, poll_ms=250, log=print
     if pending:
         raise RuntimeError(f"quiesce_real_previews: TIMEOUT for nodes: {sorted(pending)}")
     log("previews quiesced for:", sorted(source_nodes))
+
+
+def assert_preview_paths_ready(source_nodes, log=print):
+    """Hard gate: every source must return on-disk thumbnail+filmstrip paths.
+
+    Unlike ``quiesce_real_previews`` this does not pump/wait — use after quiesce
+    to double-check the session-manager-get-* internal events (the same path the
+    UI uses when building row widgets).
+    """
+    import rv.commands as rvc
+
+    missing = []
+    for n in source_nodes:
+        thumb = rvc.sendInternalEvent("session-manager-get-thumbnail-path", n)
+        strip = rvc.sendInternalEvent("session-manager-get-filmstrip-path", n)
+        if not (thumb and os.path.isfile(thumb) and strip and os.path.isfile(strip)):
+            missing.append((n, thumb, strip))
+    if missing:
+        raise RuntimeError("preview paths not ready for UI: %s" % missing)
+    log("preview paths ready for UI:", source_nodes)
 
 
 def find_tab(panel, title, settle_ms=200):

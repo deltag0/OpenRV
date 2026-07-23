@@ -42,6 +42,7 @@ panel = sm.open_session_manager_panel(log=log)
 
 # --- 3. Quiesce: wait for a REAL thumbnail + filmstrip for every source ------
 sm.quiesce_real_previews(source_nodes, log=log)
+sm.assert_preview_paths_ready(source_nodes, log=log)
 
 # --- 4. Behavioral capture -----------------------------------------------------
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)
