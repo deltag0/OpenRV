@@ -99,6 +99,25 @@ Reusable across all packages; lives in `src/test/golden/harness/`.
 | `golden_bootstrap.py` | In-RV pre-scenario hook: activates `source_setup` when `GOLDEN_SOURCE_SETUP=1` (set automatically for `tree_readonly.py`). |
 | `compare.py` | Behavioral gate (normalized GTO diff) + pixel gate (`rmsImageDiff`). Exit 0 = PASS. |
 
+### Package runners (`session_manager`)
+
+| File | Role |
+|---|---|
+| `session_manager/run_all_goldens.sh` | **Required migration gate** — runs every scenario (except integration/diagnostic skips), then `compare.py` at `-dmax 0`. Default `IMPL=python`; use `IMPL=mu` to verify Mu determinism or re-baseline. |
+| `session_manager/capture_golden.sh` | Capture Mu baselines into `golden/<id>/` (`--impl mu` via `run_scenario.py`). |
+| `session_manager/fixtures/run_mp4_integration.sh` | Optional integration only (`sm_mp4_all`); not part of `run_all_goldens.sh`. |
+
+```bash
+# Migration loop (Python port must pass all committed goldens):
+src/test/golden/session_manager/run_all_goldens.sh
+
+# Re-capture Mu baselines after intentional behavior change:
+src/test/golden/session_manager/capture_golden.sh [scenario_id ...]
+```
+
+Skipped by `run_all_goldens.sh` (no golden baseline by design): `sm_mp4_all`,
+`sm_reopen_after_hide`, `sm_toggle_diag`.
+
 ### Layout per package
 ```
 src/test/golden/

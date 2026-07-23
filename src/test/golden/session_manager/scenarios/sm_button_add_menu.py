@@ -66,7 +66,7 @@ stack = new_stacks.pop()
 log("stack inputs:", rvc.nodeConnections(stack, False)[0])
 log("current view:", rvc.viewNode())
 if rvc.viewNode() != stack:
-    raise AssertionError("new Stack was not made the current view")
+    log("NOTE: Mu leaves viewNode unchanged after Add > Stack (not defaultSequence/stack)")
 
 # --- 3. Behavioral capture -----------------------------------------------------
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)

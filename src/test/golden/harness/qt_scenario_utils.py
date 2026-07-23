@@ -56,27 +56,29 @@ def click_button(button, settle_ms: int = 300) -> None:
 
 
 def open_tool_button_menu(button, settle_ms: int = 300):
-    """Click a QToolButton wired via setMenu()/InstantPopup and return its QMenu.
+    """Show a QToolButton's attached QMenu without relying on InstantPopup click tracking.
 
     Raises if the button has no menu attached -- that's a wiring change the
     scenario must catch, not silently skip.
 
-    OPEN ISSUE (macOS smoke-testing only): the underlying `click_button()`
-    call was observed to hang indefinitely for `folderButton` and, once,
-    intermittently for `configButton` -- both InstantPopup buttons, same
-    wiring as `addButton`, which never hung. The pattern (first run clean,
-    later runs hanging after this process had force-killed a prior hung `rv`
-    instance) points at leftover macOS WindowServer/NSMenu tracking state
-    from those kills rather than a deterministic scenario bug, but this is
-    UNPROVEN. Re-verify on a clean session and, ideally, directly on the
-    pinned Linux + Xvfb target (a fresh X server per run, unaffected by host
-    state) before trusting or dropping the affected scenarios.
+    Uses ``QMenu.popup()`` at the button's global position instead of synthesizing
+    a tool-button click.  Empirically, ``QTest.mouseClick`` on InstantPopup buttons
+    can hang or never show the menu under Xvfb (especially after a prior killed RV
+    process); ``popup()`` is deterministic headlessly.
     """
-    menu = button.menu() if button is not None else None
+    if button is None:
+        raise AssertionError("open_tool_button_menu: target widget is None")
+    if not button.isVisible():
+        raise AssertionError(f"open_tool_button_menu: {button.objectName()!r} is not visible")
+    if not button.isEnabled():
+        raise AssertionError(f"open_tool_button_menu: {button.objectName()!r} is not enabled")
+    menu = button.menu()
     if menu is None:
-        name = button.objectName() if button is not None else "<None>"
-        raise AssertionError(f"open_tool_button_menu: {name!r} has no menu() attached")
-    click_button(button, settle_ms=settle_ms)
+        raise AssertionError(
+            f"open_tool_button_menu: {button.objectName()!r} has no menu() attached"
+        )
+    menu.popup(button.mapToGlobal(button.rect().bottomLeft()))
+    pump(settle_ms)
     return menu
 
 
@@ -99,8 +101,9 @@ def click_menu_action(menu, text: str, settle_ms: int = 250) -> None:
         raise AssertionError(
             f"click_menu_action: no action {text!r} found; available: {available}"
         )
-    rect = menu.actionGeometry(target)
-    QTest.mouseClick(menu, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, rect.center())
+    # trigger() is reliable headlessly; mouseClick on menu actionGeometry often
+    # misses under Xvfb and leaves graph mutations (setViewNode, etc.) undone.
+    target.trigger()
     pump(settle_ms)
 
 

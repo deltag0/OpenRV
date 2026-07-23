@@ -16,4 +16,4 @@ if [ ! -x "$RVIO" ]; then
 fi
 
 "$RVIO" "smptebars,start=1,end=1,fps=24.movieproc" -resize 64 48 -o bars_frame.jpg
-"$RVIO" "smptebars,start=1,end=8,fps=8.movieproc" -resize 64 48 -o bars_clip.mov
+"$RVIO" "smptebars,start=1,end=8,fps=8.movieproc" -resize 64 48 -o bars_clip.mp4

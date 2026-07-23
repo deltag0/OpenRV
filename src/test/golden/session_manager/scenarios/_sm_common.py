@@ -38,8 +38,58 @@ IMAGE_FIXTURE = os.environ.get("SM_TEST_IMAGE_FIXTURE") or os.path.join(
     FIXTURES_DIR, "bars_frame.jpg"
 )
 MOVIE_FIXTURE = os.environ.get("SM_TEST_MOVIE_FIXTURE") or os.path.join(
-    FIXTURES_DIR, "bars_clip.mov"
+    FIXTURES_DIR, "bars_clip.mp4"
 )
+
+# Production / multi-clip MP4 suites: set SM_TEST_MP4_DIR to a directory of *.mp4
+# clips (see fixtures/run_mp4_integration.sh and fixtures/mp4.env.example).
+# SM_TEST_MP4_FIXTURE picks one file; SM_TEST_MP4_QUIESCE=1 enables
+# thumbnail/filmstrip quiesce on multi-clip runs (slow -- off by default).
+MP4_DIR = os.environ.get("SM_TEST_MP4_DIR", "").strip()
+MP4_FIXTURE = os.environ.get("SM_TEST_MP4_FIXTURE", "").strip()
+MP4_QUIESCE = os.environ.get("SM_TEST_MP4_QUIESCE", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+
+def discover_mp4_clips(directory: str) -> list[str]:
+    """Return sorted absolute paths to every *.mp4 directly under ``directory``."""
+    if not directory or not os.path.isdir(directory):
+        return []
+    clips = [
+        os.path.join(directory, name)
+        for name in sorted(os.listdir(directory))
+        if name.lower().endswith(".mp4")
+        and os.path.isfile(os.path.join(directory, name))
+    ]
+    return clips
+
+
+def resolve_mp4_clips() -> list[str]:
+    """All MP4 clips for integration scenarios (requires SM_TEST_MP4_DIR)."""
+    clips = discover_mp4_clips(MP4_DIR)
+    if not clips and MP4_DIR:
+        raise FileNotFoundError(
+            "SM_TEST_MP4_DIR=%r has no *.mp4 files" % MP4_DIR
+        )
+    return clips
+
+
+def resolve_mp4_fixture() -> str:
+    """Single MP4 for golden-style load scenarios."""
+    if MP4_FIXTURE and os.path.isfile(MP4_FIXTURE):
+        return MP4_FIXTURE
+    clips = resolve_mp4_clips() if MP4_DIR else []
+    if clips:
+        return clips[0]
+    if os.path.isfile(MOVIE_FIXTURE):
+        return MOVIE_FIXTURE
+    raise FileNotFoundError(
+        "no MP4 fixture: set SM_TEST_MP4_FIXTURE, SM_TEST_MP4_DIR, "
+        "SM_TEST_MOVIE_FIXTURE, or run fixtures/regenerate_fixtures.sh"
+    )
 
 
 # Kept alive at module scope deliberately: a `qtutils.sessionWindow()`
@@ -161,6 +211,19 @@ def find_button(panel, name):
     return button
 
 
+def _wait_load_total(log, timeout_ms, poll_ms, label=""):
+    import rv.commands as rvc
+
+    deadline = time.time() + timeout_ms / 1000.0
+    while rvc.loadTotal() > 0 and time.time() < deadline:
+        pump(poll_ms)
+    if rvc.loadTotal() > 0:
+        raise RuntimeError(
+            "loadTotal still %s after %sms%s"
+            % (rvc.loadTotal(), timeout_ms, (" (%s)" % label if label else ""))
+        )
+
+
 def add_real_sources(paths, log=print, timeout_ms=15000, poll_ms=200):
     """addSourceVerbose each path, wait for progressive loading to finish.
 
@@ -175,16 +238,50 @@ def add_real_sources(paths, log=print, timeout_ms=15000, poll_ms=200):
     source_nodes = [rvc.addSourceVerbose([p]) for p in paths]
     log("addSourceVerbose:", list(zip(paths, source_nodes)))
 
-    deadline = time.time() + timeout_ms / 1000.0
-    while rvc.loadTotal() > 0 and time.time() < deadline:
-        pump(poll_ms)
-    if rvc.loadTotal() > 0:
+    _wait_load_total(log, timeout_ms, poll_ms)
+    group_nodes = [rvc.nodeGroup(n) for n in source_nodes]
+    log("group nodes:", group_nodes)
+    return source_nodes, group_nodes
+
+
+def add_mp4_clips_sequential(
+    clips,
+    log=print,
+    timeout_ms_per_clip=120000,
+    poll_ms=200,
+):
+    """Load many MP4s one at a time; verify each before continuing.
+
+    Returns (source_nodes, group_nodes).  Use for large clip directories
+    (e.g. large clip directories) where a single batch wait is unreliable.
+    """
+    import rv.commands as rvc
+
+    source_nodes: list[str] = []
+    failures: list[tuple[str, str]] = []
+
+    for index, path in enumerate(clips, start=1):
+        log("loading clip %d/%d: %s" % (index, len(clips), path))
+        try:
+            node = rvc.addSourceVerbose([path])
+            _wait_load_total(log, timeout_ms_per_clip, poll_ms, label=path)
+            movie = rvc.getStringProperty("%s.media.movie" % node)
+            if not movie:
+                raise RuntimeError("media.movie empty after load")
+            source_nodes.append(node)
+            log("  OK:", node, "frames:", rvc.sourceMediaInfo(node))
+        except Exception as exc:
+            failures.append((path, "%s: %s" % (type(exc).__name__, exc)))
+            log("  FAILED:", failures[-1][1])
+
+    if failures:
         raise RuntimeError(
-            f"add_real_sources: loadTotal still {rvc.loadTotal()} after {timeout_ms}ms"
+            "add_mp4_clips_sequential: %d/%d clips failed: %s"
+            % (len(failures), len(clips), failures[:5])
         )
 
     group_nodes = [rvc.nodeGroup(n) for n in source_nodes]
-    log("group nodes:", group_nodes)
+    log("loaded %d clips, %d source groups" % (len(source_nodes), len(group_nodes)))
     return source_nodes, group_nodes
 
 

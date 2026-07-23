@@ -171,10 +171,10 @@ Provided by `local_thumbnail_gen.py` (a separate `load: immediate` Python mode) 
 
 | # | Behavior | Ref | Gate | Status | Scenario |
 |---|---|---|---|---|---|
-| H1 | Real thumbnail replaces fallback icon once `rvio` preview job completes | 1877-1888,3188 | P | ⬜ | `sm_media_load` (baseline capture pending) |
-| H2 | Real filmstrip becomes available alongside the thumbnail | 1883-1888 | P | ⬜ | `sm_media_load` (baseline capture pending) |
+| H1 | Real thumbnail replaces fallback icon once `rvio` preview job completes | 1877-1888,3188 | P | ⬜ | `sm_media_load`, `sm_mp4_load` (baseline capture pending) |
+| H2 | Real filmstrip becomes available alongside the thumbnail | 1883-1888 | P | ⬜ | `sm_media_load`, `sm_mp4_load` (baseline capture pending) |
 | H4 | Fallback `fallback_thumbnail.png` until real preview arrives | 3322,1867 | P | ✅ | `tree_readonly` |
-| H5 | `session-manager-preview-available` quiesce point: capture is deterministic once every source's thumbnail+filmstrip files exist | 3188 | P | ⬜ | `sm_media_load` (baseline capture pending) |
+| H5 | `session-manager-preview-available` quiesce point: capture is deterministic once every source's thumbnail+filmstrip files exist | 3188 | P | ⬜ | `sm_media_load`, `sm_mp4_load` (baseline capture pending); integration: `sm_mp4_all` with `SM_TEST_MP4_QUIESCE=1` |
 
 > **Determinism rule:** default pilot fixtures use media-free sources and capture with
 > the fallback icon (H4), which is deterministic. Real-preview scenarios (H1/H2/H5) now
@@ -359,15 +359,15 @@ they're verified by inspection, not golden.
 
 ## Backlog
 
-Baseline capture pending for the real-media/real-button scenarios added to close the
-gaps above (14 new scenario files under `scenarios/`: `sm_media_*`, `sm_button_*`) —
-requires running `run_scenario.py --impl mu` on the pinned Linux + Xvfb + software-Mesa
-path per `../VERIFICATION.md` (not available on macOS; a Docker `rockylinux:8`/`9`
-container matching `ci-linux.yml` is plausible but requires building RV from scratch
-inside it first — a separate follow-up). Until captured, rows referencing these
-scenarios show ⬜ or an unchanged 🟡, never ✅ — see the per-row notes above. New
-real-media fixtures live in `fixtures/` (regenerate via `fixtures/regenerate_fixtures.sh`,
-overridable per-scenario with `SM_TEST_IMAGE_FIXTURE`/`SM_TEST_MOVIE_FIXTURE`). Beyond
+Mu baselines for the real-media/real-button scenarios (`sm_media_*`, `sm_button_*`,
+`sm_mp4_load`) are captured under `golden/<id>/`. The required migration gate is
+`run_all_goldens.sh` (47 scenarios as of 2026-07-23). Optional integration:
+`fixtures/run_mp4_integration.sh` + `SM_TEST_MP4_DIR` for `sm_mp4_all`.
+
+Real-media fixtures live in `fixtures/` (regenerate via `fixtures/regenerate_fixtures.sh`,
+overridable per-scenario with `SM_TEST_IMAGE_FIXTURE`/`SM_TEST_MOVIE_FIXTURE`). MP4
+integration: set `SM_TEST_MP4_DIR` to a directory of clips and run
+`fixtures/run_mp4_integration.sh` (`sm_mp4_all` only). Beyond
 this, every other golden-gateable behavior has a committed baseline (tables above); the
 rest are listed under [Dropped](#dropped-no-equivalent-golden-test). New scenarios, if
 needed, go under `scenarios/` with a golden under `golden/<id>/`.
