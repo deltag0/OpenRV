@@ -1352,10 +1352,23 @@ namespace Rv
             return;
         }
 
-        // Wait for local progressive loading to complete
+        // Wait for local progressive loading to complete.
+        // In the interactive app, RvSession::render() drives continueLoading()
+        // on each paint; headless -pyeval scenarios have no GL paint loop, so
+        // we must advance loading here or addSources() never creates sources.
         RvSession* s = RvSession::currentRvSession();
         while (s->loadTotal() != 0 || s->graph().isMediaLoading())
         {
+            try
+            {
+                s->render();
+            }
+            catch (...)
+            {
+                // readSource failures are surfaced via loadTotal reaching 0;
+                // keep pumping so after-progressive-loading still fires.
+            }
+
             // Process Qt events to keep the UI responsive
             // Exclude user input events to prevent interference during loading
             if (QCoreApplication::instance())

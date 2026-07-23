@@ -69,6 +69,8 @@ class SourceSetupMode(rvtypes.MinorMode):
         _lookNode = groupMemberOfType(lookPipeNode, "RVLookLUT")
         _typeName = commands.nodeType(source)
         fileNames = commands.getStringProperty("%s.media.movie" % source, 0, 1000)
+        if not fileNames:
+            return
         fileName = fileNames[0]
         ext = fileName.split(".")[-1].upper()
         igPrim = self.checkIgnorePrimaries(ext)

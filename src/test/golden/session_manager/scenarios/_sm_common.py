@@ -224,6 +224,67 @@ def _wait_load_total(log, timeout_ms, poll_ms, label=""):
         )
 
 
+def _collect_source_nodes():
+    """All file/image source leaf nodes currently in the graph."""
+    import rv.commands as rvc
+
+    nodes: list[str] = []
+    for typ in ("RVFileSource", "RVImageSource"):
+        nodes.extend(rvc.nodesOfType(typ))
+    return sorted(set(nodes))
+
+
+def add_sources_explicit(
+    paths,
+    log=print,
+    timeout_ms=120000,
+    poll_ms=200,
+    tag="explicit",
+):
+    """Load via ``addSources()`` -- same API as File→Open and drag-drop.
+
+    Unlike ``addSourceVerbose``, this exercises progressive loading
+    (``loadTotal`` / ``waitForProgressiveLoading`` / ``after-progressive-loading``),
+    which is the path interactive RV uses.
+
+    Returns (source_nodes, group_nodes).  Raises on timeout or if fewer
+    sources appear in the graph than paths requested.
+    """
+    import rv.commands as rvc
+
+    before = set(_collect_source_nodes())
+    log("addSources tag=%r paths=%r" % (tag, list(paths)))
+    rvc.addSources(list(paths), tag, False, False)
+    log(
+        "queued loadTotal=%s loadCount=%s"
+        % (rvc.loadTotal(), rvc.loadCount())
+    )
+
+    try:
+        rvc.waitForProgressiveLoading()
+    except Exception as exc:
+        log("waitForProgressiveLoading:", type(exc).__name__, exc)
+        _wait_load_total(log, timeout_ms, poll_ms, label="addSources")
+
+    if rvc.loadTotal() > 0:
+        raise RuntimeError(
+            "addSources: loadTotal still %s after %sms"
+            % (rvc.loadTotal(), timeout_ms)
+        )
+
+    source_nodes = sorted(set(_collect_source_nodes()) - before)
+    if len(source_nodes) < len(paths):
+        raise RuntimeError(
+            "addSources: expected %d new sources, got %d (%s)"
+            % (len(paths), len(source_nodes), source_nodes)
+        )
+
+    group_nodes = [rvc.nodeGroup(n) for n in source_nodes]
+    log("loaded source_nodes:", source_nodes)
+    log("group nodes:", group_nodes)
+    return source_nodes, group_nodes
+
+
 def add_real_sources(paths, log=print, timeout_ms=15000, poll_ms=200):
     """addSourceVerbose each path, wait for progressive loading to finish.
 

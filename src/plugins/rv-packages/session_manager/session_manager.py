@@ -1026,6 +1026,8 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
     def update_tree(self) -> None:
         if self._disable_updates:
             return
+        self._src_node_keys = []
+        self._grp_node_values = []
         self._view_model.clear()
         self._view_model.setHorizontalHeaderLabels(["Name", "*", "*"])
         self._view_tree_view.header().setMinimumSectionSize(-1)
@@ -1243,6 +1245,9 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         event.reject()
         self._progressive_loading_in_progress = False
         self.update_tree()
+        node = commands.viewNode()
+        if node is not None:
+            self.update_inputs(node)
 
     def _before_graph_view_change(self, event) -> None:
         for editor in self._editors:
