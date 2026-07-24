@@ -113,10 +113,18 @@ def main() -> int:
     )
     ap.add_argument(
         "--impl",
-        choices=("mu", "python"),
+        choices=("mu", "python", "default"),
         default=None,
         help="Implementation for --mode name(s): sets RV_MODE_IMPL_<mode>=<impl> "
-        "(default mu unless already in the environment)",
+        "(omitted: forces mu unless already in the environment, for backward "
+        "compatibility with existing gates). 'default' sets nothing at all -- "
+        "RV picks its own real, shipped default exactly as a normal launch "
+        "would, with no test-harness override. Use this to test the actual "
+        "startup/mode-selection logic itself, not a specific implementation -- "
+        "see run_gui_sanity_gate.sh's final phase, added 2026-07-24 after a "
+        "real bug (session_manager's panel unreachable via its real 'x' "
+        "shortcut on a normal launch) was found that every existing gate "
+        "missed precisely because they all force an explicit impl.",
     )
     ap.add_argument(
         "--mode",
@@ -146,7 +154,9 @@ def main() -> int:
     if os.path.basename(scenario) == "tree_readonly.py":
         env.setdefault("GOLDEN_SOURCE_SETUP", "1")
     mode_names = parse_mode_names(args.mode)
-    if args.impl is not None:
+    if args.impl == "default":
+        pass  # deliberately set nothing -- see --impl's help text
+    elif args.impl is not None:
         apply_mode_impl(env, mode_names, args.impl)
     elif not any(k.startswith(MODE_IMPL_ENV_PREFIX) for k in env):
         apply_mode_impl(env, mode_names, "mu")
@@ -181,8 +191,10 @@ def main() -> int:
             "xvfb-run", "-a", "-s", f"-screen 0 {args.screen}",
             args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL,
         ]
+    # env.get(..., "mu") would misreport --impl default as "mu" -- it isn't
+    # set to anything; show that honestly instead of implying a value.
     impl_note = ", ".join(
-        f"{MODE_IMPL_ENV_PREFIX}{n}={env.get(f'{MODE_IMPL_ENV_PREFIX}{n}', 'mu')}"
+        f"{MODE_IMPL_ENV_PREFIX}{n}={env.get(f'{MODE_IMPL_ENV_PREFIX}{n}', '(unset -- RV default)')}"
         for n in mode_names
     )
     print(

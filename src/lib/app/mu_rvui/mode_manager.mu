@@ -277,8 +277,20 @@ class: ModeManagerMode : MinorMode
         }
 
         // Default: Python for modes that no longer ship a .mu implementation.
-        if (modeName == "session_manager") return true;
-        if (modeName == "local_thumbnail_gen") return true;
+        // Also set the env var itself (not just this function's return value):
+        // confirmed 2026-07-24 that relying on the hardcoded default alone
+        // (vs. RV_MODE_IMPL_<modeName>=python being literally present in the
+        // environment) left session_manager's panel unreachable via its
+        // real 'x' shortcut/menu on a normal launch, even though this
+        // function returns the same `true` either way -- something
+        // downstream keys off the env var's actual presence, not just this
+        // return value. Setting it here makes the two paths fully
+        // equivalent instead of only equivalent in this one function.
+        if (modeName == "session_manager" || modeName == "local_thumbnail_gen")
+        {
+            setenv("RV_MODE_IMPL_%s" % modeName, "python", true);
+            return true;
+        }
 
         let list = getenv("RV_PREFER_PYTHON_MODES");
         if (list neq nil)

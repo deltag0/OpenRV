@@ -28,6 +28,20 @@
 #
 set -euo pipefail
 
+# Re-exec under caffeinate -d -i so the display can't sleep mid-batch. Fixed
+# 2026-07-24: a long unattended full-batch capture ran past this machine's
+# displaysleep timeout (180s); RV windows launched after the display slept
+# and woke came back at a different backing scale factor (319x598) than the
+# ones launched before (638x1196) -- not a real behavioral difference, pure
+# environment drift, and it silently corrupted that entire capture batch.
+# QT_ENABLE_HIGHDPI_SCALING/QT_SCALE_FACTOR alone did NOT fix this (tested):
+# the panel grab reads the screen's actual backing scale directly, so the
+# only real fix is preventing the sleep event itself.
+if [ -z "${CAFFEINATED:-}" ]; then
+    export CAFFEINATED=1
+    exec caffeinate -d -i "$0" "$@"
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG="$HERE"
 REPO_ROOT="$(cd "$PKG/../../../.." && pwd)"

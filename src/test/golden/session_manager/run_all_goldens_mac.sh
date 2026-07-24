@@ -20,6 +20,15 @@
 #
 set -euo pipefail
 
+# Re-exec under caffeinate -d -i so the display can't sleep mid-batch --
+# see capture_golden_mac.sh's header for why this matters (display sleep
+# mid-run changes the backing scale factor of later windows, which looks
+# exactly like a pixel regression but isn't one).
+if [ -z "${CAFFEINATED:-}" ]; then
+    export CAFFEINATED=1
+    exec caffeinate -d -i "$0" "$@"
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG="$HERE"
 REPO_ROOT="$(cd "$PKG/../../../.." && pwd)"
@@ -73,7 +82,13 @@ all_required_ids() {
 
 ids=("$@")
 if [ ${#ids[@]} -eq 0 ]; then
-    mapfile -t ids < <(all_required_ids)
+    # mapfile needs Bash 4+; macOS ships Bash 3.2 (last GPLv2 release) as
+    # /bin/bash with no newer one on PATH by default -- confirmed 2026-07-24,
+    # this crashed the script outright on its very first no-args run ever.
+    ids=()
+    while IFS= read -r id; do
+        ids+=("$id")
+    done < <(all_required_ids)
 fi
 
 pass=0

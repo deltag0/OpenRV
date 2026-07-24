@@ -215,6 +215,28 @@ objective (a broken port that can't find the widget never writes the file), only
 behavioral gate passed but which has a pixel report attached, so the reviewer knows exactly
 which scenarios to look at without re-reading the whole log.
 
+**Final phase: launch like a normal app, no `--impl` at all.** Added 2026-07-24 after a
+real bug — `session_manager`'s panel was unreachable via its real `x` shortcut/menu on a
+genuinely normal launch — that every gate in this repo missed, including this one's own main
+loop above. The reason: every gate always forces an explicit `RV_MODE_IMPL_<mode>` (needed
+for the Mu-vs-Python comparison the rest of this gate does), so none of them ever exercised
+RV's actual default mode-selection logic — which is exactly where the bug lived
+(`preferPythonImpl()`'s hardcoded-default branch behaved differently from the same env var
+being literally present, for reasons that resisted `print()`-based tracing — see the fix in
+`src/bin/nsapps/RV/main.cpp` and `mode_manager.mu`). Confirmed by direct reproduction: reverting
+the fix and re-running this exact scenario with no impl override produced `panel(sessionManager)
+found: False` / `PANEL NOT FOUND -- no panel.png written`, which `compare.py`'s missing-artifact
+rule turns into a hard FAIL regardless of pixel mode.
+
+This phase re-runs every non-skipped scenario one more time via `run_scenario.py --impl
+default` (a real, first-class option — not a throwaway env var — that sets no
+`RV_MODE_IMPL_*` at all, letting RV pick its own shipped default exactly as a normal launch
+would). It is a **hard gate**: missing artifacts and behavioral mismatch fail it, the same
+rule as everywhere else in this doc. It does not replace the main loop's Mu-vs-Python
+comparison — the two are complementary: the main loop asks "does the *implementation* I
+selected behave correctly," this phase asks "does *selecting no implementation at all* still
+work."
+
 **Known bug, `sm_meridian_mp4_load` and `sm_media_add_sources` skipped:** both use
 `addSources()` + `waitForProgressiveLoading()`, which hangs forever under a real display
 (confirmed 2026-07-24 — native, not fixable from the Python/test side; neither Qt

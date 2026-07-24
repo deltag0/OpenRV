@@ -23,6 +23,17 @@
 # rule): whether a PNG got produced at all is objective, only its pixel
 # content is left to review.
 #
+# A final phase (added 2026-07-24) then re-runs every scenario ONE more time
+# with no --impl override at all -- an actual normal app launch, RV picking
+# its own real default. This exists because a real bug (session_manager's
+# panel unreachable via its real 'x' shortcut/menu on a normal launch) was
+# found that this gate's own main loop above -- and every other gate in the
+# repo -- missed, precisely because they all force an explicit --impl. That
+# forcing is required for the Mu-vs-Python comparison the main loop does; the
+# final phase exists specifically to still catch "the default path itself is
+# broken," which the main loop structurally cannot see. Hard gate: missing
+# artifacts and behavioral mismatch fail it, same rule as everywhere else.
+#
 # Usage:
 #   ./run_gui_sanity_gate.sh              # all scenarios, real display
 #   ./run_gui_sanity_gate.sh sm_nav       # single scenario
@@ -30,6 +41,16 @@
 #                                         # "normal" rendering noise looks like)
 #
 set -euo pipefail
+
+# On macOS, re-exec under caffeinate -d -i so the display can't sleep
+# mid-batch -- see capture_golden_mac.sh's header for why: display sleep
+# mid-run changes the backing scale factor of later windows, which looks
+# exactly like a pixel regression but isn't one. caffeinate is macOS-only,
+# so this is a no-op (skipped) on Linux.
+if [ "$(uname)" = "Darwin" ] && [ -z "${CAFFEINATED:-}" ]; then
+    export CAFFEINATED=1
+    exec caffeinate -d -i "$0" "$@"
+fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG="$HERE"
@@ -90,7 +111,13 @@ all_required_ids() {
 
 ids=("$@")
 if [ ${#ids[@]} -eq 0 ]; then
-    mapfile -t ids < <(all_required_ids)
+    # mapfile needs Bash 4+; macOS ships Bash 3.2 with no newer one on PATH
+    # by default -- confirmed 2026-07-24 via the identical bug in
+    # run_all_goldens_mac.sh's no-args path.
+    ids=()
+    while IFS= read -r id; do
+        ids+=("$id")
+    done < <(all_required_ids)
 fi
 
 pass=0
@@ -168,7 +195,69 @@ if [ -n "$review_ids" ]; then
     echo "  rendering noise or a real regression. If real, treat it as a failure and iterate --"
     echo "  this script's exit code alone does not capture that judgment."
 fi
-if [ "$fail" -gt 0 ]; then
-    echo "Failed:$fail_list"
+
+# Final phase: launch exactly like a normal app -- no --impl, no RV_MODE_IMPL_*
+# override at all, RV picks its own real, shipped default. Added 2026-07-24
+# after a real bug (session_manager's panel unreachable via its real 'x'
+# shortcut/menu on a normal launch) was found that every other gate in this
+# repo missed, because every one of them -- this script's own main loop
+# included -- always forces an explicit --impl. That's necessary for the
+# Mu-vs-Python comparison the rest of this gate does, but it means none of
+# them ever exercise RV's actual default mode-selection logic, which is
+# exactly where that bug lived. This phase is a HARD gate on missing
+# artifacts and behavioral mismatch (same compare.py rules as the main loop)
+# -- it exists specifically to catch "the default path itself is broken,"
+# not to re-litigate Mu vs Python.
+echo
+echo "--- Final phase: real display, no --impl override (launching like a normal app) ---"
+default_pass=0
+default_fail=0
+default_fail_list=""
+for id in "${ids[@]}"; do
+    if should_skip "$id"; then
+        continue
+    fi
+    golden_dir="$GOLDEN/$id"
+    scenario="$SCENARIOS/${id}.py"
+    out="/tmp/gui_sanity_default_${id}"
+    if [ ! -f "$golden_dir/session.rv" ] || [ ! -f "$scenario" ]; then
+        continue  # already reported by the main loop above
+    fi
+    rm -rf "$out"
+    mkdir -p "$out"
+    if ! python3 "$RUNNER" \
+        --scenario "$scenario" \
+        --out "$out" \
+        --rv "$RV" \
+        --impl default \
+        --timeout "$TIMEOUT" \
+        --no-xvfb >/dev/null 2>&1; then
+        echo "FAIL $id (default launch: run_scenario)"
+        default_fail=$((default_fail + 1))
+        default_fail_list="$default_fail_list $id"
+        continue
+    fi
+    compare_rc=0
+    compare_out="$(python3 "$COMPARE" \
+        --golden-dir "$golden_dir" \
+        --actual-dir "$out" \
+        --pixel-mode report 2>&1)" || compare_rc=$?
+    if [ "$compare_rc" -ne 0 ]; then
+        echo "FAIL $id (default launch: behavioral mismatch or missing artifact -- e.g. a panel that never opened)"
+        echo "$compare_out" | head -8
+        default_fail=$((default_fail + 1))
+        default_fail_list="$default_fail_list $id"
+        continue
+    fi
+    default_pass=$((default_pass + 1))
+done
+echo "Default-launch phase: PASS=$default_pass FAIL=$default_fail"
+if [ "$default_fail" -gt 0 ]; then
+    echo "Default-launch failures (real bug in RV's own default startup path, not a"
+    echo "harness/impl-selection artifact):$default_fail_list"
+fi
+
+if [ "$fail" -gt 0 ] || [ "$default_fail" -gt 0 ]; then
+    echo "Failed:$fail_list$default_fail_list"
     exit 1
 fi
