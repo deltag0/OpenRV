@@ -123,16 +123,40 @@ def resolve_meridian_mp4_fixture() -> str:
 
 
 def ensure_local_thumbnail_gen(log=print):
-    """Register/activate local_thumbnail_gen (required for Mu session_manager runs)."""
+    """Register/activate local_thumbnail_gen (required for Mu session_manager runs).
+
+    Under Xvfb, the `load: immediate` PACKAGE entry loads the module but
+    (observed empirically) leaves it inactive, so the first createMode() call
+    here is the real, first registration. Under a real (non-Xvfb) display,
+    that same immediate-load entry fully constructs and registers the mode
+    at RV startup already -- calling createMode() again then hits RV's
+    native "Duplicate mode: LocalThumbnailGen" guard from a second
+    LocalThumbnailGen() construction, even though this module's own
+    `the_mode` singleton (scoped to whichever import first ran) is still
+    None. That specific error means "already loaded and active", not a
+    failure -- swallow only that one and continue, since re-raising it here
+    previously crashed every real-display thumbnail scenario outright
+    (quiesce_real_previews calls this with no try/except).
+    """
     import rv.commands as rvc
 
     try:
         import local_thumbnail_gen
 
-        local_thumbnail_gen.createMode()
-        if not rvc.isModeActive("local_thumbnail_gen"):
-            rvc.activateMode("local_thumbnail_gen")
-        log("local_thumbnail_gen active:", rvc.isModeActive("local_thumbnail_gen"))
+        try:
+            local_thumbnail_gen.createMode()
+        except Exception as exc:
+            if "Duplicate mode" not in str(exc):
+                raise
+            log("local_thumbnail_gen: already registered via immediate-load:", exc)
+        # The mode's registered name is the class name "LocalThumbnailGen" (set by
+        # MinorMode.__init__ from the class itself, not the lowercase module/file
+        # name) -- isModeActive/activateMode must use that, or they silently no-op
+        # against a name that doesn't exist ("WARNING: tried to activate
+        # non-existant mode local_thumbnail_gen", verified empirically).
+        if not rvc.isModeActive("LocalThumbnailGen"):
+            rvc.activateMode("LocalThumbnailGen")
+        log("local_thumbnail_gen active:", rvc.isModeActive("LocalThumbnailGen"))
     except Exception as exc:
         log("ensure_local_thumbnail_gen failed:", exc)
         raise

@@ -1,0 +1,37 @@
+{
+  "mcpServers": {
+    "atlassian": {
+      "type": "http",
+      "url": "https://mcp.atlassian.com/v1/mcp"
+    },
+    "nucleus-mcp": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:noexec,nosuid,size=100m",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges:true",
+        "-e",
+        "NUCLEUS_API_KEY=${NUCLEUS_API_KEY}",
+        "-e",
+        "NUCLEUS_API_BASE=https://autodesk.nucleusgov.com/nucleus/api",
+        "artifactory.dev.adskengineer.net/autodeskcloud/nucleus-mcp:latest"
+      ]
+    },
+    "slack": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-slack"
+      ],
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+        "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
+      }
+    }
+  }
+}

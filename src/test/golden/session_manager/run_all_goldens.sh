@@ -9,7 +9,13 @@
 #
 # Exit 0 only if every scenario passes run_scenario + compare.py at -dmax 0.
 # Set COMPARE_BEHAVIORAL_ONLY=1 to skip the pixel gate (useful when NO_XVFB=1
-# and GPU/font rendering differs from the Xvfb+software-Mesa baselines).
+# and GPU/font rendering differs from the Xvfb+software-Mesa baselines) --
+# that combination is a smoke test only, not a gate.
+#
+# For the separate, still-required real-display GATE (behavioral stays hard;
+# pixel differences are reported for review instead of gated at a threshold),
+# use the sibling script ./run_gui_sanity_gate.sh instead -- see
+# ../VERIFICATION.md#gui-sanity-gate-real-display.
 #
 set -euo pipefail
 

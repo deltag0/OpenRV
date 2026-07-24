@@ -26,7 +26,31 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", "..", ".."))
-RMS_IMAGE_DIFF = os.path.join(REPO_ROOT, "_build", "stage", "app", "bin", "rmsImageDiff")
+
+
+def _find_rms_image_diff() -> str:
+    """Locate the built rmsImageDiff binary across staging layouts.
+
+    Linux stages flat under app/bin/; the macOS build only stages inside the
+    .app bundle (verified 2026-07-24: no app/bin/ exists on a Mac build at
+    all). RMS_IMAGE_DIFF overrides both for a nonstandard layout.
+    """
+    override = os.environ.get("RMS_IMAGE_DIFF")
+    if override:
+        return override
+    candidates = [
+        os.path.join(REPO_ROOT, "_build", "stage", "app", "bin", "rmsImageDiff"),
+        os.path.join(
+            REPO_ROOT, "_build", "stage", "app", "RV.app", "Contents", "MacOS", "rmsImageDiff"
+        ),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return candidates[0]  # preserve prior default for the "not found" error message
+
+
+RMS_IMAGE_DIFF = _find_rms_image_diff()
 
 # Session-header properties that reflect UI/playback state rather than graph
 # structure; drop whole GTO property lines whose name matches, so they can't
@@ -75,12 +99,43 @@ def compare_gto(golden_path: str, actual_path: str) -> tuple[bool, str]:
 def compare_png(golden_png: str, actual_png: str, dmax: float) -> tuple[bool, str]:
     if not os.path.isfile(RMS_IMAGE_DIFF):
         return False, f"pixel: rmsImageDiff not found at {RMS_IMAGE_DIFF}"
+    # NOTE: rmsImageDiff's exit code from -cmp cannot be trusted -- its main()
+    # discards the comparison status and always returns 0 (verified: solid
+    # black vs. solid white at -dmax 0 exits 0). Passing -m alongside -cmp is
+    # also wrong: in the per-pixel loop, -m's branch shadows -cmp's comparison
+    # entirely, so the dmax check would never run even if the exit code were
+    # fixed. Do not pass -m here; parse stdout's verdict line instead.
     proc = subprocess.run(
-        [RMS_IMAGE_DIFF, "-cmp", "-dmax", str(dmax), "-m", golden_png, actual_png],
+        [RMS_IMAGE_DIFF, "-cmp", "-dmax", str(dmax), golden_png, actual_png],
         capture_output=True, text=True,
     )
-    ok = proc.returncode == 0
-    return ok, f"pixel: {'MATCH' if ok else 'MISMATCH'} (dmax={dmax})\n{proc.stdout.strip()}"
+    stdout = proc.stdout.strip()
+    ok = "Images are matched." in stdout
+    return ok, f"pixel: {'MATCH' if ok else 'MISMATCH'} (dmax={dmax})\n{stdout}"
+
+
+def report_png(golden_png: str, actual_png: str) -> str:
+    """Non-gating pixel report: RMS + max-diff location/values, no verdict.
+
+    Used by the GUI sanity gate, which has no scripted pixel pass/fail --
+    real GPU/font/compositor rendering is never byte-identical to the pinned
+    Xvfb+software-Mesa goldens, so a threshold here would either mask real
+    regressions (too loose) or flag rendering noise as failures forever (too
+    tight). Instead this prints quantitative info plus both PNG paths for a
+    human or an AI reviewer to look at and judge -- see
+    ../VERIFICATION.md#gui-sanity-gate-real-display.
+    """
+    if not os.path.isfile(RMS_IMAGE_DIFF):
+        return f"pixel: rmsImageDiff not found at {RMS_IMAGE_DIFF}"
+    proc = subprocess.run(
+        [RMS_IMAGE_DIFF, "-m", golden_png, actual_png],
+        capture_output=True, text=True,
+    )
+    stdout = proc.stdout.strip()
+    return (
+        f"pixel: INFO (no threshold -- review required)\n{stdout}\n"
+        f"golden={golden_png}\nactual={actual_png}"
+    )
 
 
 def main() -> int:
@@ -88,6 +143,15 @@ def main() -> int:
     ap.add_argument("--golden-dir", required=True)
     ap.add_argument("--actual-dir", required=True)
     ap.add_argument("--dmax", type=float, default=0.0)
+    ap.add_argument(
+        "--pixel-mode",
+        choices=("gate", "report"),
+        default="gate",
+        help="gate (default): -cmp at --dmax, a mismatch fails the run (used by "
+        "run_all_goldens.sh). report: no threshold, no verdict -- print RMS/"
+        "max-diff + both PNG paths for a human/AI to judge (used by "
+        "run_gui_sanity_gate.sh); never contributes to the exit code.",
+    )
     args = ap.parse_args()
 
     results = []
@@ -106,8 +170,10 @@ def main() -> int:
     # Compare every PNG artifact present in the golden dir (not just
     # panel.png -- popup-menu scenarios grab their own top-level window,
     # e.g. configmenu.png). A golden PNG with no matching actual PNG is a
-    # hard FAIL, not a silently-skipped gate: a broken port that can't find
-    # the widget (and so never writes the artifact) must not pass.
+    # hard FAIL, not a silently-skipped gate, in BOTH modes: a broken port
+    # that can't find the widget (and so never writes the artifact) must not
+    # pass, even under the report-only GUI sanity gate -- whether the artifact
+    # exists at all is objective, only its pixel content is left to review.
     golden_pngs = sorted(
         f for f in os.listdir(args.golden_dir) if f.endswith(".png")
     ) if os.path.isdir(args.golden_dir) else []
@@ -118,9 +184,12 @@ def main() -> int:
             ok_all = False
             results.append(f"pixel: missing actual {name} (golden exists)")
             continue
-        ok, msg = compare_png(g_png, a_png, args.dmax)
-        ok_all &= ok
-        results.append(f"[{name}] {msg}")
+        if args.pixel_mode == "report":
+            results.append(f"[{name}] {report_png(g_png, a_png)}")
+        else:
+            ok, msg = compare_png(g_png, a_png, args.dmax)
+            ok_all &= ok
+            results.append(f"[{name}] {msg}")
     # (If the golden dir has no PNGs at all, the pixel gate simply isn't
     # exercised for this scenario.)
 

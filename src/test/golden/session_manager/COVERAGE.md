@@ -360,8 +360,14 @@ they're verified by inspection, not golden.
 ## Backlog
 
 Mu baselines for the real-media/real-button scenarios (`sm_media_*`, `sm_button_*`,
-`sm_mp4_load`) are captured under `golden/<id>/`. The required migration gate is
-`run_all_goldens.sh` (47 scenarios as of 2026-07-23). Optional integration:
+`sm_mp4_load`) are captured under `golden/<id>/`. The required migration gates on Linux are
+`run_all_goldens.sh` (47 scenarios as of 2026-07-23, headless Xvfb+software-Mesa, hard
+pass/fail) **and** `run_gui_sanity_gate.sh` (same scenarios, real display; behavioral is
+hard, pixel differences are reported for review rather than gated at a threshold) — see
+`../VERIFICATION.md#gui-sanity-gate-real-display`. On macOS, `run_all_goldens_mac.sh` is the
+required gate against a separate, Mac-native baseline set in `golden-mac/<id>/` (captured
+via `capture_golden_mac.sh`, hard pass/fail on both behavioral and pixel) — see
+`../VERIFICATION.md#mac-native-gate`. Optional integration:
 `fixtures/run_mp4_integration.sh` + `SM_TEST_MP4_DIR` for `sm_mp4_all`.
 
 Real-media fixtures live in `fixtures/` (regenerate via `fixtures/regenerate_fixtures.sh`,
