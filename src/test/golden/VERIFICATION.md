@@ -228,6 +228,19 @@ the fix and re-running this exact scenario with no impl override produced `panel
 found: False` / `PANEL NOT FOUND -- no panel.png written`, which `compare.py`'s missing-artifact
 rule turns into a hard FAIL regardless of pixel mode.
 
+The fix also needed to be applied to `src/bin/apps/rv/main.cpp` (`utf8Main`) — the separate
+Linux/Windows entry point (`src/bin/nsapps/RV/main.cpp` is macOS-only, per
+`src/bin/CMakeLists.txt`'s `RV_TARGET_DARWIN` gate). Caught by an independent review agent
+(see the "final review gate" section below), not by this Mac-only test suite — this repo has
+no automated coverage on Linux/Windows for this bug at all, since golden-mac is Mac-specific
+and the Linux `run_all_goldens.sh`/`run_gui_sanity_gate.sh` equivalents were never run this
+session. That file also needed `setEnvVar()` (its own existing `putenv`/`setenv` wrapper), not
+raw `setenv()`, since plain `setenv()` isn't available on Windows there — a second thing the
+review caught. **Not compile-verified**: this file is gated out of the build entirely on a
+macOS machine (confirmed: zero references in this Mac's `build.ninja`), so this change has
+only been checked by static reading, not an actual compile, let alone a real Linux/Windows
+launch test. Verify it on a real Linux or Windows build before trusting it.
+
 This phase re-runs every non-skipped scenario one more time via `run_scenario.py --impl
 default` (a real, first-class option — not a throwaway env var — that sets no
 `RV_MODE_IMPL_*` at all, letting RV pick its own shipped default exactly as a normal launch
@@ -306,6 +319,52 @@ real scenario bug.
 
 ---
 
+## Final review gate (independent code review)
+
+Every gate above checks *behavior* — does the port produce the right graph/pixels/panel.
+None of them read the *code*. Added 2026-07-24, as the last step before treating a loop
+iteration's changes as done: a fresh, independent agent reviews the actual diff for
+correctness — the class of defect that passes every behavioral gate simply because the test
+suite happens not to exercise it.
+
+**Scope: one iteration, not the whole branch.** Review the diff between the current commit
+and its immediate parent (`git diff <parent>..HEAD`), not the full branch-vs-`main` history —
+the latter is almost always far larger than what any one iteration actually touched, and
+reviewing it wastes the agent's attention on code nobody just changed. Exclude binary/generated
+artifacts (`golden/`, `golden-mac/` PNGs and `session.rv` files) — review the code that
+produced them, not the artifacts themselves.
+
+**Mechanism:** spawn a fresh `general-purpose` agent (there is no dedicated `code-reviewer`
+agent type in this environment) with a prompt that gives it the specific commit range, the
+context of what changed and why (a fresh agent has none of the implementing agent's context —
+it must be given enough to make real judgment calls, not just told to "review this"), and
+specific things to check per file. Have it report via the `ReportFindings` tool, ranked
+most-severe first. **Do not** use the `/code-review` slash command for this — it's gated to
+explicit user invocation only (`disable-model-invocation`) and cannot be called
+programmatically by a loop.
+
+**Enforcement:** a hard gate on *blocking* findings (real defects — wrong logic, unsafe
+assumptions, a fix applied to only one of several places it was needed) — the loop must fix
+and re-review, same discipline as every other gate in this doc. Non-blocking findings (style,
+minor nits) are reported but don't fail the run; don't let the gate become noisy enough that
+real findings get lost in it.
+
+**Concrete example this caught, same day it was added:** the `preferPythonImpl()` fix above
+was applied to `src/bin/nsapps/RV/main.cpp` and verified there — but that file is the
+**macOS-only** entry point (`src/bin/CMakeLists.txt`'s `RV_TARGET_DARWIN` gate). The review
+agent traced the actual CMake gating and found the separate Linux/Windows entry point
+(`src/bin/apps/rv/main.cpp`, `utf8Main`) had no such fix at all, even though the underlying
+bug is in shared `mode_manager.mu` code, not Mac-specific — and no gate in this repo would
+have caught the gap, since all Mac-native/GUI-sanity coverage is Mac-only. Fixing it surfaced
+a second issue on inspection: that file can't use raw `setenv()` (unavailable on Windows) and
+needed the file's own `setEnvVar()` compatibility wrapper instead. Neither of those two things
+would have been caught by any of the behavioral gates above — they're exactly the class of
+defect this gate exists for. (That second fix is also unverified by compilation: the file is
+gated out of this Mac's build graph entirely, so it's been checked only by static reading —
+flagged, not silently assumed correct.)
+
+---
+
 ## Definition of done (per migration slice)
 
 A slice of a Python port is accepted when:
@@ -320,6 +379,8 @@ A slice of a Python port is accepted when:
 4. Any cross-package API the slice exposes (callable from other Mu/Python packages)
    remains callable — verified by a scenario or integration check before the Mu source is
    removed.
+5. The [final review gate](#final-review-gate-independent-code-review) has run against this
+   iteration's diff and reported no unresolved blocking findings.
 
 
 ## Allowed Operations
@@ -338,3 +399,8 @@ A slice of a Python port is accepted when:
    other or merged — a Mac capture failing against `golden/` (or a Linux capture failing
    against `golden-mac/`) is not a real signal, just a platform mismatch; always compare Mac
    output to `golden-mac/` and Linux output to `golden/`
+5. Before calling an iteration done, run the [final review
+   gate](#final-review-gate-independent-code-review) (a fresh agent reviewing this
+   iteration's actual diff, not the whole branch) and treat any blocking finding it reports
+   as a failure requiring another fix-and-retry cycle — the behavioral gates above check
+   outcomes, not code, and cannot see this class of defect
