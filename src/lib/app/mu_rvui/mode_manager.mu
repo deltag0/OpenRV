@@ -81,13 +81,12 @@ class: PyMinorMode : MinorMode
     method: activate (void;)
     {
         PyObject_CallObject(_activateFunc, _pymode);
-        _active = to_bool(PyObject_CallObject(_activeFunc, _pymode));
+        //PyObject_CallObject(_setModeStatusFunc, (_pymode, true));
     }
 
     method: deactivate (void;)
     {
         PyObject_CallObject(_deactivateFunc, _pymode);
-        _active = to_bool(PyObject_CallObject(_activeFunc, _pymode));
     }
 
     method: layout (void; Event event)
@@ -258,52 +257,6 @@ class: ModeManagerMode : MinorMode
         return nil;
     }
 
-    //
-    //  Mu→Python migration toggle (any mode). When true, loadEntry skips the Mu
-    //  module and loads the Python MinorMode even if a .mu file exists.
-    //
-    //  Precedence (first match wins):
-    //    1. RV_MODE_IMPL_<modeName>=python|mu   (per-mode, e.g. RV_MODE_IMPL_session_manager=python)
-    //    2. RV_PREFER_PYTHON_MODES=mode_a,mode_b (comma-separated list)
-    //
-
-    method: preferPythonImpl (bool; string modeName)
-    {
-        let perMode = getenv("RV_MODE_IMPL_%s" % modeName);
-        if (perMode neq nil)
-        {
-            if (perMode == "python") return true;
-            if (perMode == "mu") return false;
-        }
-
-        // Default: Python for modes that no longer ship a .mu implementation.
-        // Also set the env var itself (not just this function's return value):
-        // confirmed 2026-07-24 that relying on the hardcoded default alone
-        // (vs. RV_MODE_IMPL_<modeName>=python being literally present in the
-        // environment) left session_manager's panel unreachable via its
-        // real 'x' shortcut/menu on a normal launch, even though this
-        // function returns the same `true` either way -- something
-        // downstream keys off the env var's actual presence, not just this
-        // return value. Setting it here makes the two paths fully
-        // equivalent instead of only equivalent in this one function.
-        if (modeName == "session_manager" || modeName == "local_thumbnail_gen")
-        {
-            setenv("RV_MODE_IMPL_%s" % modeName, "python", true);
-            return true;
-        }
-
-        let list = getenv("RV_PREFER_PYTHON_MODES");
-        if (list neq nil)
-        {
-            for_each (part; list.split(","))
-            {
-                if (part == modeName) return true;
-            }
-        }
-
-        return false;
-    }
-
     method: loadPythonEntry (PyMinorMode; ModeEntry entry)
     {
         use path;
@@ -363,25 +316,8 @@ class: ModeManagerMode : MinorMode
             }
             let loadStartTime = theTime();
             PyMinorMode pymode = nil;
-            let preferPython = preferPythonImpl(entry.name);
 
-            if (preferPython)
-            {
-                try
-                {
-                    pymode = loadPythonEntry(entry);
-                }
-                catch (exception exc)
-                {
-                    print("ERROR: while loading python module: %s\n" % exc);
-                }
-
-                if (pymode eq nil)
-                {
-                    throw exception("RV_MODE_IMPL_%s=python set but python module failed to load" % entry.name);
-                }
-            }
-            else if (!runtime.load_module(entry.name))
+            if (!runtime.load_module(entry.name))
             {
                 try
                 {
@@ -435,7 +371,7 @@ class: ModeManagerMode : MinorMode
         }
         catch (exception exc)
         {
-            showWarning("unable to load \"%s\" : %s" % (entry.name, exc));
+            showWarning("unable to load \"%s\" : %s" % (name, exc));
         }
 
         if (entry.mode neq nil && entry.mode._active != activate)
@@ -466,7 +402,7 @@ class: ModeManagerMode : MinorMode
         }
         catch (exception exc)
         {
-            showWarning("unable to load \"%s\" : %s" % (entry.name, exc));
+            showWarning("unable to load \"%s\" : %s" % (name, exc));
         }
     }
 

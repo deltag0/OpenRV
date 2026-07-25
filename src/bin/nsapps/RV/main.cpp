@@ -262,28 +262,6 @@ void noOpenGLWarnOnStartup(QtMsgType t, const QMessageLogContext& context, const
 
 int main(int argc, char* argv[])
 {
-    //
-    //  session_manager and local_thumbnail_gen no longer ship a .mu
-    //  implementation, so mode_manager.mu's preferPythonImpl() defaults them
-    //  to Python even with no RV_MODE_IMPL_<name> override. That default was
-    //  observed to behave differently from the env var actually being present
-    //  in the environment at process start (confirmed 2026-07-24: the
-    //  session_manager panel was unreachable via its real 'x' shortcut/menu
-    //  without the env var set before launch, even though preferPythonImpl()
-    //  returns the same boolean either way -- something else keys off the
-    //  env var's literal presence at startup, not just that return value).
-    //  Setting it here, before anything else runs, reproduces the working
-    //  case unconditionally instead of relying on a user/launcher to set it.
-    //
-    if (!getenv("RV_MODE_IMPL_session_manager"))
-    {
-        setenv("RV_MODE_IMPL_session_manager", "python", 1);
-    }
-    if (!getenv("RV_MODE_IMPL_local_thumbnail_gen"))
-    {
-        setenv("RV_MODE_IMPL_local_thumbnail_gen", "python", 1);
-    }
-
     if (!getenv("HOME"))
     {
         cerr << "ERROR: $HOME is not set in the environment and is required." << endl;

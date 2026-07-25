@@ -25,8 +25,6 @@ logger = logging.getLogger(__name__)
 
 the_mode = None
 
-MODE_NAME = "local_thumbnail_gen"
-
 FRAME_WIDTH = 240
 MAX_FILMSTRIP_FRAMES = 25
 MAX_WORKERS = 2
@@ -90,7 +88,7 @@ class LocalThumbnailGen(rvtypes.MinorMode):
 
         # The last parameter is the priority of the plugin. Having it at 10 means it will be run last
         # letting custom plugins of higher priority run first and consume the event before the local plugin runs.
-        self.init(MODE_NAME, self.global_bindings(), None, None, None, 10)
+        self.init("LocalThumbnailGen", self.global_bindings(), None, None, None, 10)
 
     def global_bindings(self) -> list[tuple[str, Any, str]]:
         return [
@@ -111,13 +109,8 @@ class LocalThumbnailGen(rvtypes.MinorMode):
             ),
             (
                 "before-clear-session",
-                self._on_before_clear_session,
+                self._on_clear_session,
                 "Cancel in-flight generation and evict cache when the session is cleared",
-            ),
-            (
-                "after-clear-session",
-                self._on_after_clear_session,
-                "Re-enable thumbnail generation once the session has been cleared",
             ),
             (
                 "before-source-delete",
@@ -624,7 +617,7 @@ class LocalThumbnailGen(rvtypes.MinorMode):
                     _resume_proc(proc)
         self._drain_one()
 
-    def _on_before_clear_session(self, event: Any) -> None:
+    def _on_clear_session(self, event: Any) -> None:
         """Cancel in-flight generation and evict all caches when the session is cleared."""
         event.reject()
         self._shutting_down = True
@@ -644,10 +637,6 @@ class LocalThumbnailGen(rvtypes.MinorMode):
                 proc.wait()
             except OSError:
                 logger.warning(f"Failed to kill process {proc}")
-
-    def _on_after_clear_session(self, event: Any) -> None:
-        event.reject()
-        self._shutting_down = False
 
     def _on_session_deletion(self, event: Any) -> None:
         event.reject()
@@ -727,8 +716,6 @@ class LocalThumbnailGen(rvtypes.MinorMode):
 
 def createMode() -> LocalThumbnailGen:
     global the_mode
-    if the_mode is not None:
-        return the_mode
     the_mode = LocalThumbnailGen()
     return the_mode
 

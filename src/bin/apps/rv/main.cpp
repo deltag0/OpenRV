@@ -243,34 +243,6 @@ static void setPlatformSpecificLocale()
 
 int utf8Main(int argc, char* argv[])
 {
-    //
-    //  session_manager and local_thumbnail_gen no longer ship a .mu
-    //  implementation, so mode_manager.mu's preferPythonImpl() defaults them
-    //  to Python even with no RV_MODE_IMPL_<name> override. That default was
-    //  observed to behave differently from the env var actually being present
-    //  in the environment at process start (confirmed 2026-07-24 on macOS:
-    //  the session_manager panel was unreachable via its real 'x'
-    //  shortcut/menu on a normal launch without the env var set before
-    //  launch, even though preferPythonImpl() returns the same boolean either
-    //  way). This is shared mode_manager.mu logic, not Mac-specific, so this
-    //  entry point (Linux/Windows) needs the same fix as
-    //  src/bin/nsapps/RV/main.cpp (macOS) -- setting it here, before anything
-    //  else runs, reproduces the working case unconditionally instead of
-    //  relying on a user/launcher to set it.
-    //
-    // Use setEnvVar(), not raw setenv(): this file's own wrapper (below) exists
-    // specifically because plain setenv() isn't available on Windows (WIN32
-    // uses putenv("VAR=value") instead) -- confirmed by review, this codebase
-    // has no other setenv() compatibility shim.
-    if (!getenv("RV_MODE_IMPL_session_manager"))
-    {
-        setEnvVar("RV_MODE_IMPL_session_manager", "python");
-    }
-    if (!getenv("RV_MODE_IMPL_local_thumbnail_gen"))
-    {
-        setEnvVar("RV_MODE_IMPL_local_thumbnail_gen", "python");
-    }
-
 #ifdef PLATFORM_LINUX
     XInitThreads();
 #endif
