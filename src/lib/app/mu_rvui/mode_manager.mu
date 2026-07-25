@@ -362,8 +362,8 @@ class: ModeManagerMode : MinorMode
                 if (pymode eq nil)
                 {
                     throw exception(
-                        "RV_MODE_IMPL_%s=python (or equivalent toggle) set but "
-                        "python module failed to load" % entry.name);
+                        ("RV_MODE_IMPL_%s=python (or equivalent toggle) set but "
+                         + "python module failed to load") % entry.name);
                 }
             }
             else if (!runtime.load_module(entry.name))
