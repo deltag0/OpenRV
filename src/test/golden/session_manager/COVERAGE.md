@@ -42,10 +42,11 @@ below name the scenario pinning each behavior and its status.
 
 ## Port entry point
 
-The Python skeleton is `src/plugins/rv-packages/session_manager/session_manager.py`
-(`SessionManagerMode` + `createMode()`; no panel built yet). Run it against a golden with
-`--impl python` (sets `RV_MODE_IMPL_session_manager=python`; the runner puts the package
-source on `PYTHONPATH`, so edits are picked up with no rebuild):
+No Python port exists yet for `session_manager` — the package is pure Mu. The first step
+is a skeleton `src/plugins/rv-packages/session_manager/session_manager.py`
+(`SessionManagerMode` + `createMode()`). Run it against a golden with `--impl python` (sets
+`RV_MODE_IMPL_session_manager=python`; the runner puts the package source on `PYTHONPATH`,
+so edits are picked up with no rebuild):
 
 ```bash
 python3 src/test/golden/harness/run_scenario.py \
@@ -58,13 +59,6 @@ python3 src/test/golden/harness/compare.py \
 
 First target is `tree_readonly`: build the dock panel + node tree so the `sessionManager`
 widget exists and the graph matches, then advance through the other scenarios.
-
-### Port notes (from baseline capture)
-- `setUIName`/`uiName` are in `rv.extra_commands`, not `rv.commands`.
-- `RVRetimeGroup` accepts a single input; other group types take many.
-- `prev/nextViewNode()` walk the view *history* (back/forward), not `viewNodes()`.
-- Opening the panel *after* `clearSession()` can crash RV — build panel, then clear.
-- Icons resolve from the global `:images/` Qt resource (RvCommon) — reuse, don't re-author.
 
 ---
 
@@ -94,7 +88,7 @@ widget exists and the graph matches, then advance through the other scenarios.
 | # | Behavior | Ref | Gate | Status | Scenario |
 |---|---|---|---|---|---|
 | C1 | Add ▸ Sequence/Stack/Switch/Folder/Layout/Retime create the right node type | 3348-3353,3382-3387 | B+P | ✅ | `sm_create_views`; real `addButton` click + "New Viewable" menu: `sm_button_add_menu` (⬜ baseline capture pending) |
-| C2 | Add ▸ Color / OCIO / Dynamic (Dynamic gated by `RV_ENABLE_DYNAMIC_NODE`) | 3365-3370 | B | ✅ | `sm_create_nodes` (⚠ Mu bug: OCIO action uses `"RVOCIO"`; real type is `"OCIO"`) |
+| C2 | Add ▸ Color / OCIO / Dynamic (Dynamic gated by `RV_ENABLE_DYNAMIC_NODE`) | 3365-3370 | B | ✅ | `sm_create_nodes` |
 | C3 | Selected nodes become inputs of the new node; auto-named (`renameByType`) | 2522-2538,2281-2314 | B | 🟡 | `sm_create_views` (inputs pinned; auto-name not) |
 | C5 | Create Image dialog: SRGB/ACES charts, color bars, black, color, blank → movieproc source | 2564-2681 | B | ✅ | `sm_create_image` (movieproc outcome; modal dialog UI not gated) |
 | C8 | New Folder: empty / from selection (reparent) / from copy | 2699-2753 | B | ✅ | `sm_folders`; real `folderButton` click + "From Selection", real media: `sm_button_folder_menu` (⬜ baseline capture pending -- macOS smoke-testing hit an unexplained hang clicking `folderButton`'s popup itself, unproven on the Linux target; see scenario docstring) |
@@ -157,6 +151,7 @@ here.
 | G5 | Folder child sort order (`setSortKeyInParent`) | 977-998,482 | B | ✅ | `sm_folder_sort` |
 
 **Not gated here** (no command equivalent / handler-internal — verify on the Python port):
+
 - **G3/G4** drop guards (reject non-col-0 / drop-on-self / FOLDERS-root-with-non-folders) —
   pure `dragEnter/dragMove` accept-reject logic with no graph outcome to capture.
 - **G6** `NodeModel.mimeData` `rvnode://TYPE/NODE[/media]` URL format — feasible via a direct
@@ -275,6 +270,7 @@ Base dir `P/ = src/plugins/rv-packages/session_manager/`. Status of each file un
 Mu→Python port.
 
 ### O.1 Mu sources to PORT then remove (the actual translation work)
+
 | File | Role | Notes |
 |---|---|---|
 | `P/session_manager.mu.in` | **source of truth** for the main mode (3577 lines) | `@MU_QT_*@` tokens (M5/M6) become runtime Qt6 calls in Python |
@@ -292,17 +288,20 @@ Mu→Python port.
 | `P/transform_manip.mu` | pointer transform manipulator (F11) | → `.py`; uses pointer/stylus events |
 
 ### O.2 Python files to CREATE
+
 One `.py` per Mu module above (e.g. `session_manager.py`, `composite_edit_mode.py`, …),
 or a package subdir. Each a `rv.rvtypes.MinorMode`. **Mode names, menu paths, shortcuts,
 and event names MUST be preserved** (external code keys on them — see O.5).
 
 ### O.3 Files to MODIFY
+
 | File | Change |
 |---|---|
 | `P/PACKAGE` | `modes:` entries change `file: <name>` from `.mu` to `.py` for every ported mode (12 entries). Keep `menu`/`shortcut`/`event`/`load` values. `local_thumbnail_gen.py` entry unchanged. |
 | `P/CMakeLists.txt` | Remove `CONFIGURE_FILE(session_manager.mu.in …)` and the `MU_QT_*` token vars (11-27). `RV_STAGE(RVPKG)` glob still packages the dir; verify `.py` files stage into `plugins/Python`-side of the rvpkg as expected. |
 
 ### O.4 Files REUSED UNCHANGED (do not re-author)
+
 | File(s) | Why unchanged |
 |---|---|
 | `P/*.ui` (11 files: `session_manager.ui`, `new_node.ui`, `create_image_dialog.ui`, `composite/folder/layout/retime/sequence/source/stack/switch.ui`) | Loaded at runtime via `QUiLoader` in Python exactly as `loadUIFile` did (M1/M2). |
@@ -313,6 +312,7 @@ and event names MUST be preserved** (external code keys on them — see O.5).
 | `P/makepng`, `P/maketif` | Dev-only icon regen scripts (shell out to `rvio_hw`); not runtime. |
 
 ### O.5 External couplings to FIX (outside the package) ⚠️
+
 | File | Coupling | Action |
 |---|---|---|
 | `src/plugins/rv-packages/maya_tools/maya_tools.mu(.in)` | `require session_manager;` (:16) + `session_manager.theMode().selectedNodes()` (:159,162,216,218,225,227,264,266) | **BREAKS** — Mu cannot `require` a Python module. |
@@ -323,6 +323,7 @@ and event names MUST be preserved** (external code keys on them — see O.5).
 > **Cross-language API contract.** `theMode().selectedNodes()` is a Mu-to-Mu call from
 > `maya_tools` and `rvnuke`. Porting `session_manager` to Python severs it. Options, in
 > order of preference:
+>
 > 1. Expose `selectedNodes()` as a registered **command** (or internal event) callable
 >    from both Mu and Python, and update the two callers to use it.
 > 2. Keep a thin Mu shim module named `session_manager` exposing
@@ -333,6 +334,7 @@ and event names MUST be preserved** (external code keys on them — see O.5).
 > golden/integration check for it before removing the Mu module.
 
 ### O.6 Coexistence during migration
+
 Both Mu and Python sources can remain in the package directory during the port.
 Select which mode(s) RV loads at launch via `RV_MODE_IMPL_<modeName>` or
 `RV_PREFER_PYTHON_MODES` — see

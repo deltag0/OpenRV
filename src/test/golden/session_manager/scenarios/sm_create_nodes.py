@@ -5,14 +5,6 @@ entries. Those actions map to node types via addNodeOfType -> newNode(type, "")
 (session_manager.mu :3405-3406, :2522-2537). The Dynamic node is intentionally
 skipped: it is gated by RV_ENABLE_DYNAMIC_NODE (:3367) and is not created here.
 
-NOTE on the OCIO type string: the Mu menu maps the "OCIO" action to the type
-name "RVOCIO" (:3406), but that type is NOT registered in this build --
-newNode("RVOCIO") raises "can't build node of type 'RVOCIO'". The registered
-OCIO node type is "OCIO" (verified via nodeTypes(true)). We therefore create the
-OCIO node with its real type "OCIO" so the outcome is meaningful; the Python
-port should create the same "OCIO" node (and the stale "RVOCIO" string in the Mu
-source should be corrected to "OCIO").
-
 From a fresh session:
   * create an RVColor node via newNode("RVColor", "")
   * create an OCIO node via newNode("OCIO", "")
@@ -30,6 +22,7 @@ import os
 import time
 
 import rv.commands as rvc
+import rv.qtutils as qtutils
 
 out_dir = os.environ["GOLDEN_OUT"]
 diag = open(os.path.join(out_dir, "diag.txt"), "w")
@@ -41,12 +34,8 @@ def log(*a):
 
 try:
     from PySide6 import QtWidgets, QtCore
-    import shiboken6 as shiboken
 except ImportError:  # pragma: no cover - older Qt
     from PySide2 import QtWidgets, QtCore
-    import shiboken2 as shiboken
-
-import rv.qtutils as qtutils
 
 
 def pump(ms):
@@ -56,7 +45,7 @@ def pump(ms):
         app.processEvents(QtCore.QEventLoop.AllEvents, 20)
 
 
-# --- 1. Create RVColor and RVOCIO nodes (C2) -----------------------------------
+# --- 1. Create RVColor and OCIO nodes (C2) -----------------------------------
 color = rvc.newNode("RVColor", "")
 log("created RVColor ->", color, "type=", rvc.nodeType(color))
 
@@ -84,7 +73,7 @@ panel = win.findChild(QtWidgets.QWidget, "sessionManager") if win else None
 log("sessionWindow:", bool(win), "panel(sessionManager) found:", bool(panel))
 
 if panel is None:
-    for dw in (win.findChildren(QtWidgets.QDockWidget) if win else []):
+    for dw in win.findChildren(QtWidgets.QDockWidget) if win else []:
         log("  dock:", dw.objectName(), "visible", dw.isVisible())
         if "session" in dw.objectName().lower():
             panel = dw

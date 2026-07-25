@@ -12,6 +12,7 @@
 # MD051: link fragment
 # MD055: table pipe style (leading/trailing pipes)
 # MD056: table column count
+# MD060: table column style (pipe spacing)
 MD013: false
 MD001: false
 MD003: false
@@ -25,3 +26,4 @@ MD041: false
 MD051: false
 MD055: false
 MD056: false
+MD060: false

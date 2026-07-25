@@ -53,6 +53,7 @@ python3 src/test/golden/harness/run_scenario.py \
 ```
 
 ### Limits
+
 - Requires `<modeName>.py` with a `createMode()` entry point on the Python path.
 
 ---
@@ -127,6 +128,7 @@ design): `sm_mp4_all`, `sm_reopen_after_hide`, `sm_toggle_diag`, `sm_thumb_diag`
 `sm_thumb_diag2`.
 
 ### Layout per package
+
 ```
 src/test/golden/
   VERIFICATION.md            # this file (shared method)
@@ -139,7 +141,8 @@ src/test/golden/
                               # separate pixel space from golden/, see Mac-native gate
 ```
 
-### Headless operational rules 
+### Headless operational rules
+
 - Launch under `xvfb-run` with `LIBGL_ALWAYS_SOFTWARE=1`. **`QT_QPA_PLATFORM=offscreen`
   segfaults RV** (its offscreen GL plugin needs GLX). Software Mesa under Xvfb is
   deterministic given a pinned Mesa version.
@@ -215,31 +218,12 @@ objective (a broken port that can't find the widget never writes the file), only
 behavioral gate passed but which has a pixel report attached, so the reviewer knows exactly
 which scenarios to look at without re-reading the whole log.
 
-**Final phase: launch like a normal app, no `--impl` at all.** Added 2026-07-24 after a
-real bug — `session_manager`'s panel was unreachable via its real `x` shortcut/menu on a
-genuinely normal launch — that every gate in this repo missed, including this one's own main
-loop above. The reason: every gate always forces an explicit `RV_MODE_IMPL_<mode>` (needed
-for the Mu-vs-Python comparison the rest of this gate does), so none of them ever exercised
-RV's actual default mode-selection logic — which is exactly where the bug lived
-(`preferPythonImpl()`'s hardcoded-default branch behaved differently from the same env var
-being literally present, for reasons that resisted `print()`-based tracing — see the fix in
-`src/bin/nsapps/RV/main.cpp` and `mode_manager.mu`). Confirmed by direct reproduction: reverting
-the fix and re-running this exact scenario with no impl override produced `panel(sessionManager)
-found: False` / `PANEL NOT FOUND -- no panel.png written`, which `compare.py`'s missing-artifact
-rule turns into a hard FAIL regardless of pixel mode.
-
-The fix also needed to be applied to `src/bin/apps/rv/main.cpp` (`utf8Main`) — the separate
-Linux/Windows entry point (`src/bin/nsapps/RV/main.cpp` is macOS-only, per
-`src/bin/CMakeLists.txt`'s `RV_TARGET_DARWIN` gate). Caught by an independent review agent
-(see the "final review gate" section below), not by this Mac-only test suite — this repo has
-no automated coverage on Linux/Windows for this bug at all, since golden-mac is Mac-specific
-and the Linux `run_all_goldens.sh`/`run_gui_sanity_gate.sh` equivalents were never run this
-session. That file also needed `setEnvVar()` (its own existing `putenv`/`setenv` wrapper), not
-raw `setenv()`, since plain `setenv()` isn't available on Windows there — a second thing the
-review caught. **Not compile-verified**: this file is gated out of the build entirely on a
-macOS machine (confirmed: zero references in this Mac's `build.ninja`), so this change has
-only been checked by static reading, not an actual compile, let alone a real Linux/Windows
-launch test. Verify it on a real Linux or Windows build before trusting it.
+**Final phase: launch like a normal app, no `--impl` at all.** Every other phase in this
+gate always forces an explicit `RV_MODE_IMPL_<mode>` (needed for the Mu-vs-Python comparison
+the rest of the gate does), so none of them ever exercise RV's actual default
+mode-selection logic. A port can pass every other phase while still being unreachable on a
+genuinely normal launch if that default-selection path is wrong — this phase exists
+specifically to close that blind spot.
 
 This phase re-runs every non-skipped scenario one more time via `run_scenario.py --impl
 default` (a real, first-class option — not a throwaway env var — that sets no
@@ -271,6 +255,7 @@ pixel spaces are not comparable (see below) and are never diffed against each ot
 **Why this is viable as a real gate, not just a sanity check** (verified empirically
 2026-07-24 on one Mac dev machine, real logged-in display session, no Xvfb — macOS has
 none):
+
 - Two back-to-back captures of `tree_readonly` produced a byte-identical `session.rv` and a
   byte-identical `panel.png` (`rmsImageDiff -m` reported no diff). Real-display rendering
   *can* be bit-reproducible on a fixed machine/session, unlike the cross-machine/cross-GPU
@@ -349,25 +334,12 @@ and re-review, same discipline as every other gate in this doc. Non-blocking fin
 minor nits) are reported but don't fail the run; don't let the gate become noisy enough that
 real findings get lost in it.
 
-**Concrete example this caught, same day it was added:** the `preferPythonImpl()` fix above
-was applied to `src/bin/nsapps/RV/main.cpp` and verified there — but that file is the
-**macOS-only** entry point (`src/bin/CMakeLists.txt`'s `RV_TARGET_DARWIN` gate). The review
-agent traced the actual CMake gating and found the separate Linux/Windows entry point
-(`src/bin/apps/rv/main.cpp`, `utf8Main`) had no such fix at all, even though the underlying
-bug is in shared `mode_manager.mu` code, not Mac-specific — and no gate in this repo would
-have caught the gap, since all Mac-native/GUI-sanity coverage is Mac-only. Fixing it surfaced
-a second issue on inspection: that file can't use raw `setenv()` (unavailable on Windows) and
-needed the file's own `setEnvVar()` compatibility wrapper instead. Neither of those two things
-would have been caught by any of the behavioral gates above — they're exactly the class of
-defect this gate exists for. (That second fix is also unverified by compilation: the file is
-gated out of this Mac's build graph entirely, so it's been checked only by static reading —
-flagged, not silently assumed correct.)
-
 ---
 
 ## Definition of done (per migration slice)
 
 A slice of a Python port is accepted when:
+
 1. Every coverage item in that slice is ✅ (a passing golden scenario pins it).
 2. On Linux: both gates pass at `-dmax 0` against the Mu-captured goldens headlessly
    (`run_all_goldens.sh`), **and** the GUI sanity gate (`run_gui_sanity_gate.sh`) exits clean
@@ -381,7 +353,6 @@ A slice of a Python port is accepted when:
    removed.
 5. The [final review gate](#final-review-gate-independent-code-review) has run against this
    iteration's diff and reported no unresolved blocking findings.
-
 
 ## Allowed Operations
 
