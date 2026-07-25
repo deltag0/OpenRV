@@ -42,23 +42,19 @@ below name the scenario pinning each behavior and its status.
 
 ## Port entry point
 
-No Python port exists yet for `session_manager` — the package is pure Mu. The first step
-is a skeleton `src/plugins/rv-packages/session_manager/session_manager.py`
-(`SessionManagerMode` + `createMode()`). Run it against a golden with `--impl python` (sets
-`RV_MODE_IMPL_session_manager=python`; the runner puts the package source on `PYTHONPATH`,
-so edits are picked up with no rebuild):
+Python port lives under `src/plugins/rv-packages/session_manager/`:
+`session_manager.py` (`SessionManagerMode` + `createMode()`), with
+`session_manager_support.py`, `session_manager_tree.py`, and
+`session_manager_interactions.py` (toolbar/menu wiring required for
+`tree_readonly` panel pixels). Toggle with `RV_MODE_IMPL_session_manager=python`
+(or `RV_PREFER_PYTHON_MODES`); the harness prepends package source to
+`PYTHONPATH` and sets `RV_PYTHONPATH_APPEND_ONLY=1` so edits load without rebuild
+(staged `PlugIns/Python/` must not shadow source — remove stale copies after
+rebuild if golden runs pick up old artifacts).
 
-```bash
-python3 src/test/golden/harness/run_scenario.py \
-    --scenario src/test/golden/session_manager/scenarios/tree_readonly.py \
-    --out /tmp/tree_readonly --impl python
-python3 src/test/golden/harness/compare.py \
-    --golden-dir src/test/golden/session_manager/golden/tree_readonly \
-    --actual-dir /tmp/tree_readonly --dmax 0
-```
-
-First target is `tree_readonly`: build the dock panel + node tree so the `sessionManager`
-widget exists and the graph matches, then advance through the other scenarios.
+**Slice 1 (read-only tree, `tree_readonly`):** Python verified green on macOS
+(`run_all_goldens_mac.sh`, `golden-mac/tree_readonly`, `-dmax 0`) as of 2026-07-25.
+Mu sources remain in place.
 
 ---
 

@@ -70,6 +70,7 @@ def apply_mode_impl(env: dict[str, str], modes: list[str], impl: str) -> None:
 def parse_mode_names(raw: str) -> list[str]:
     return [m.strip() for m in raw.split(",") if m.strip()]
 
+
 # The in-RV wrapper: exec the scenario file, and ALWAYS hard-exit so a
 # windowless RV never hangs waiting for a GUI event. A scenario exception
 # exits non-zero so the runner can report failure.
@@ -145,9 +146,12 @@ def main() -> int:
     os.makedirs(out, exist_ok=True)
 
     env = dict(os.environ)
-    env["LIBGL_ALWAYS_SOFTWARE"] = "1"   # force software Mesa (deterministic, no GPU)
+    env["LIBGL_ALWAYS_SOFTWARE"] = "1"  # force software Mesa (deterministic, no GPU)
     env["PYTHONUNBUFFERED"] = "1"
-    env["GOLDEN_OUT"] = out              # scenario writes artifacts here
+    # Let harness/package PYTHONPATH precede staged PlugIns/Python so Mu→Python
+    # migration edits under src/plugins/rv-packages/ load without rebuild.
+    env["RV_PYTHONPATH_APPEND_ONLY"] = "1"
+    env["GOLDEN_OUT"] = out  # scenario writes artifacts here
     env["GOLDEN_SCENARIO"] = scenario
     env["GOLDEN_BOOTSTRAP"] = os.path.join(_HERE, "golden_bootstrap.py")
     # tree_readonly pins movieproc sRGB2linear=1; source_setup must be active first.
@@ -178,9 +182,7 @@ def main() -> int:
     # non-empty.
     scenario_dir = os.path.dirname(scenario)
     prior = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = os.pathsep.join(
-        [scenario_dir, _HERE] + pkg_dirs + ([prior] if prior else [])
-    )
+    env["PYTHONPATH"] = os.pathsep.join([scenario_dir, _HERE] + pkg_dirs + ([prior] if prior else []))
     # Root/container safety (harmless otherwise).
     env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
@@ -188,8 +190,15 @@ def main() -> int:
         cmd = [args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL]
     else:
         cmd = [
-            "xvfb-run", "-a", "-s", f"-screen 0 {args.screen}",
-            args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL,
+            "xvfb-run",
+            "-a",
+            "-s",
+            f"-screen 0 {args.screen}",
+            args.rv,
+            "-noPrefs",
+            "-nomb",
+            "-pyeval",
+            _PYEVAL,
         ]
     # env.get(..., "mu") would misreport --impl default as "mu" -- it isn't
     # set to anything; show that honestly instead of implying a value.
