@@ -110,9 +110,8 @@ if [ ${#ids[@]} -eq 0 ]; then
 fi
 
 # Returns 0 (identical) or 1 (differs); prints nothing on identical, a short
-# reason otherwise. rmsImageDiff's -cmp exit code cannot be trusted (see
-# ../VERIFICATION.md's pixel-gate bugfix note) so this uses -m: the "max diff
-# at (...)" line is only ever printed when a nonzero difference was found.
+# reason otherwise. Uses -m: the "max diff at (...)" line is only ever
+# printed when a nonzero difference was found.
 pngs_identical() {
     local a="$1" b="$2"
     local out

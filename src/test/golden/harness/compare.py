@@ -40,9 +40,7 @@ def _find_rms_image_diff() -> str:
         return override
     candidates = [
         os.path.join(REPO_ROOT, "_build", "stage", "app", "bin", "rmsImageDiff"),
-        os.path.join(
-            REPO_ROOT, "_build", "stage", "app", "RV.app", "Contents", "MacOS", "rmsImageDiff"
-        ),
+        os.path.join(REPO_ROOT, "_build", "stage", "app", "RV.app", "Contents", "MacOS", "rmsImageDiff"),
     ]
     for c in candidates:
         if os.path.isfile(c):
@@ -55,9 +53,7 @@ RMS_IMAGE_DIFF = _find_rms_image_diff()
 # Session-header properties that reflect UI/playback state rather than graph
 # structure; drop whole GTO property lines whose name matches, so they can't
 # cause spurious behavioral diffs.
-_VOLATILE_PROP_RE = re.compile(
-    r"^\s*(string sessionName|int currentFrame|int\[\] marks)\b"
-)
+_VOLATILE_PROP_RE = re.compile(r"^\s*(string sessionName|int currentFrame|int\[\] marks)\b")
 # Absolute media paths vary by machine; canonicalize to a stable token.
 _MOVIE_LINE_RE = re.compile(r'^(\s*string movie = ")([^"]+)("\s*)$')
 
@@ -71,7 +67,7 @@ def normalize_gto(text: str) -> str:
             continue
         m = _MOVIE_LINE_RE.match(line)
         if m and (m.group(2).endswith(".mp4") or m.group(2).endswith(".mov")):
-            line = '%s<MP4_FIXTURE>%s' % (m.group(1), m.group(3))
+            line = "%s<MP4_FIXTURE>%s" % (m.group(1), m.group(3))
         else:
             line = line.replace(REPO_ROOT, "<REPO>").replace(home, "<HOME>")
         out_lines.append(line)
@@ -87,10 +83,15 @@ def compare_gto(golden_path: str, actual_path: str) -> tuple[bool, str]:
         return True, "behavioral: MATCH"
     # Produce a short unified diff for the report.
     import difflib
+
     diff = "\n".join(
         difflib.unified_diff(
-            g.splitlines(), a.splitlines(),
-            fromfile="golden", tofile="actual", lineterm="", n=2,
+            g.splitlines(),
+            a.splitlines(),
+            fromfile="golden",
+            tofile="actual",
+            lineterm="",
+            n=2,
         )
     )
     return False, "behavioral: MISMATCH\n" + diff
@@ -99,15 +100,13 @@ def compare_gto(golden_path: str, actual_path: str) -> tuple[bool, str]:
 def compare_png(golden_png: str, actual_png: str, dmax: float) -> tuple[bool, str]:
     if not os.path.isfile(RMS_IMAGE_DIFF):
         return False, f"pixel: rmsImageDiff not found at {RMS_IMAGE_DIFF}"
-    # NOTE: rmsImageDiff's exit code from -cmp cannot be trusted -- its main()
-    # discards the comparison status and always returns 0 (verified: solid
-    # black vs. solid white at -dmax 0 exits 0). Passing -m alongside -cmp is
-    # also wrong: in the per-pixel loop, -m's branch shadows -cmp's comparison
-    # entirely, so the dmax check would never run even if the exit code were
-    # fixed. Do not pass -m here; parse stdout's verdict line instead.
+    # Parse stdout's verdict line rather than relying solely on the exit code.
+    # Do not pass -m alongside -cmp: in the per-pixel loop, -m's branch shadows
+    # -cmp's comparison entirely, so the dmax check would never run.
     proc = subprocess.run(
         [RMS_IMAGE_DIFF, "-cmp", "-dmax", str(dmax), golden_png, actual_png],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     stdout = proc.stdout.strip()
     ok = "Images are matched." in stdout
@@ -129,13 +128,11 @@ def report_png(golden_png: str, actual_png: str) -> str:
         return f"pixel: rmsImageDiff not found at {RMS_IMAGE_DIFF}"
     proc = subprocess.run(
         [RMS_IMAGE_DIFF, "-m", golden_png, actual_png],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     stdout = proc.stdout.strip()
-    return (
-        f"pixel: INFO (no threshold -- review required)\n{stdout}\n"
-        f"golden={golden_png}\nactual={actual_png}"
-    )
+    return f"pixel: INFO (no threshold -- review required)\n{stdout}\ngolden={golden_png}\nactual={actual_png}"
 
 
 def main() -> int:
@@ -165,7 +162,9 @@ def main() -> int:
         results.append(msg)
     else:
         ok_all = False
-        results.append(f"behavioral: missing session.rv (golden={os.path.isfile(g_sess)}, actual={os.path.isfile(a_sess)})")
+        results.append(
+            f"behavioral: missing session.rv (golden={os.path.isfile(g_sess)}, actual={os.path.isfile(a_sess)})"
+        )
 
     # Compare every PNG artifact present in the golden dir (not just
     # panel.png -- popup-menu scenarios grab their own top-level window,
@@ -174,9 +173,9 @@ def main() -> int:
     # that can't find the widget (and so never writes the artifact) must not
     # pass, even under the report-only GUI sanity gate -- whether the artifact
     # exists at all is objective, only its pixel content is left to review.
-    golden_pngs = sorted(
-        f for f in os.listdir(args.golden_dir) if f.endswith(".png")
-    ) if os.path.isdir(args.golden_dir) else []
+    golden_pngs = (
+        sorted(f for f in os.listdir(args.golden_dir) if f.endswith(".png")) if os.path.isdir(args.golden_dir) else []
+    )
     for name in golden_pngs:
         g_png = os.path.join(args.golden_dir, name)
         a_png = os.path.join(args.actual_dir, name)
