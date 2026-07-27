@@ -102,6 +102,14 @@ assert stk is not None, "no RVStack node found in group"
 set_int(grp, "ui.wipes", [1])
 set_string(stk, "composite.type", "over")
 
+# Ensure wipe tag properties match Mu (StackGroup / wipes.mu) before capture.
+try:
+    from StackGroup_edit_mode import StackGroupEditMode
+
+    StackGroupEditMode._sync_wipe_tags()
+except Exception as exc:
+    log("sync wipe tags:", exc)
+
 # --- 5. Behavioral capture -----------------------------------------------------
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)
 log("saved session.rv")

@@ -378,7 +378,7 @@ class SessionManagerInteractions:
         elif node and sub_type == NotASubComponent:
             self._disable_updates = True
             try:
-                commands.setUIName(node, item.text())
+                extra_commands.setUIName(node, item.text())
             except Exception as exc:
                 print("failed to set name on %s to %s: %s\n" % (node, item.text(), exc))
             self._disable_updates = False
@@ -697,7 +697,7 @@ class SessionManagerInteractions:
         sources = commands.addSourceVerbose([mp])
         if sources:
             group = commands.nodeGroup(sources)
-            commands.setUIName(group, self._cid_name)
+            extra_commands.setUIName(group, self._cid_name)
 
     def _new_color_slot(self, color) -> None:
         self._cid_color = color

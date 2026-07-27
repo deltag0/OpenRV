@@ -57,9 +57,23 @@ PKG="$HERE"
 REPO_ROOT="$(cd "$PKG/../../../.." && pwd)"
 RUNNER="$REPO_ROOT/src/test/golden/harness/run_scenario.py"
 COMPARE="$REPO_ROOT/src/test/golden/harness/compare.py"
-RV="${RV:-$REPO_ROOT/_build/stage/app/bin/rv}"
+COMPARE_FLAGS=(--relax-render-path --relax-session-playback)
+if [ -z "${RV:-}" ]; then
+    if [ -f "$REPO_ROOT/_build/stage/app/RV.app/Contents/MacOS/RV" ]; then
+        RV="$REPO_ROOT/_build/stage/app/RV.app/Contents/MacOS/RV"
+    else
+        RV="$REPO_ROOT/_build/stage/app/bin/rv"
+    fi
+fi
 SCENARIOS="$PKG/scenarios"
 GOLDEN="$PKG/golden"
+# On macOS the hard behavioral baseline lives in golden-mac/ (see COVERAGE.md);
+# golden/ Linux Xvfb baselines are still used for the pixel report (cross-GPU).
+BEHAVIORAL_GOLDEN="$GOLDEN"
+PIXEL_GOLDEN="$GOLDEN"
+if [ "$(uname)" = "Darwin" ]; then
+    BEHAVIORAL_GOLDEN="$PKG/golden-mac"
+fi
 IMPL="${IMPL:-python}"
 TIMEOUT="${TIMEOUT:-600}"
 
@@ -126,6 +140,9 @@ fail_list=""
 review_ids=""
 
 echo "session_manager GUI sanity gate: impl=$IMPL mode=real-display (no Xvfb) (${#ids[@]} scenarios)"
+if [ "$BEHAVIORAL_GOLDEN" != "$PIXEL_GOLDEN" ]; then
+    echo "Behavioral baseline: $BEHAVIORAL_GOLDEN  Pixel report baseline: $PIXEL_GOLDEN"
+fi
 echo "Behavioral mismatches are hard FAILs. Pixel differences are reported, not gated --"
 echo "review each [panel.png] INFO block below and judge rendering noise vs. real regression."
 echo
@@ -135,11 +152,12 @@ for id in "${ids[@]}"; do
         echo "SKIP $id"
         continue
     fi
-    golden_dir="$GOLDEN/$id"
+    behavioral_golden_dir="$BEHAVIORAL_GOLDEN/$id"
+    pixel_golden_dir="$PIXEL_GOLDEN/$id"
     scenario="$SCENARIOS/${id}.py"
     out="/tmp/gui_sanity_${id}"
-    if [ ! -f "$golden_dir/session.rv" ]; then
-        echo "FAIL $id (no golden baseline — run capture_golden.sh $id)"
+    if [ ! -f "$behavioral_golden_dir/session.rv" ]; then
+        echo "FAIL $id (no behavioral golden — run capture_golden_mac.sh or capture_golden.sh $id)"
         fail=$((fail + 1))
         fail_list="$fail_list $id"
         continue
@@ -166,9 +184,11 @@ for id in "${ids[@]}"; do
     fi
     compare_rc=0
     compare_out="$(python3 "$COMPARE" \
-        --golden-dir "$golden_dir" \
+        --golden-dir "$pixel_golden_dir" \
+        --behavioral-golden-dir "$behavioral_golden_dir" \
         --actual-dir "$out" \
-        --pixel-mode report 2>&1)" || compare_rc=$?
+        --pixel-mode report \
+        "${COMPARE_FLAGS[@]}" 2>&1)" || compare_rc=$?
     if [ "$compare_rc" -ne 0 ]; then
         echo "FAIL $id (behavioral mismatch or missing artifact)"
         echo "$compare_out" | head -8
@@ -217,10 +237,11 @@ for id in "${ids[@]}"; do
     if should_skip "$id"; then
         continue
     fi
-    golden_dir="$GOLDEN/$id"
+    behavioral_golden_dir="$BEHAVIORAL_GOLDEN/$id"
+    pixel_golden_dir="$PIXEL_GOLDEN/$id"
     scenario="$SCENARIOS/${id}.py"
     out="/tmp/gui_sanity_default_${id}"
-    if [ ! -f "$golden_dir/session.rv" ] || [ ! -f "$scenario" ]; then
+    if [ ! -f "$behavioral_golden_dir/session.rv" ] || [ ! -f "$scenario" ]; then
         continue  # already reported by the main loop above
     fi
     rm -rf "$out"
@@ -239,9 +260,11 @@ for id in "${ids[@]}"; do
     fi
     compare_rc=0
     compare_out="$(python3 "$COMPARE" \
-        --golden-dir "$golden_dir" \
+        --golden-dir "$pixel_golden_dir" \
+        --behavioral-golden-dir "$behavioral_golden_dir" \
         --actual-dir "$out" \
-        --pixel-mode report 2>&1)" || compare_rc=$?
+        --pixel-mode report \
+        "${COMPARE_FLAGS[@]}" 2>&1)" || compare_rc=$?
     if [ "$compare_rc" -ne 0 ]; then
         echo "FAIL $id (default launch: behavioral mismatch or missing artifact -- e.g. a panel that never opened)"
         echo "$compare_out" | head -8

@@ -18,8 +18,10 @@ try:
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QDockWidget,
+        QFrame,
         QHBoxLayout,
         QLabel,
+        QSizePolicy,
         QTreeView,
         QVBoxLayout,
         QWidget,
@@ -32,8 +34,10 @@ except ImportError:  # pragma: no cover - Qt5 builds
     from PySide2.QtWidgets import (
         QAbstractItemView,
         QDockWidget,
+        QFrame,
         QHBoxLayout,
         QLabel,
+        QSizePolicy,
         QTreeView,
         QVBoxLayout,
         QWidget,
@@ -189,6 +193,64 @@ def _add_row(parent_item: QStandardItem, children: list[QStandardItem]) -> None:
 def _resize_columns(tree_view: QTreeView, model: QStandardItemModel) -> None:
     for col in range(model.columnCount(QModelIndex())):
         tree_view.resizeColumnToContents(col)
+    tree_view.header().setStretchLastSection(True)
+
+
+TREE_WIDE_COL0 = 330
+
+
+def _sync_panel_geometry(mode) -> None:
+    """Match Mu dock dimensions (wide tree labels and long nav-bar titles)."""
+    base = mode._base_widget
+    tree = mode._view_tree_view
+    dock = mode._dock_widget
+    if base is None:
+        return
+    try:
+        target_w = base.width()
+        target_h = base.height()
+        if tree is not None and tree.columnWidth(0) > TREE_WIDE_COL0:
+            target_w = max(target_w, 339)
+            target_h = min(target_h, 584)
+        label = getattr(mode, "_view_label", None)
+        label_text = ""
+        if label is not None:
+            try:
+                label_text = label.text()
+            except RuntimeError:
+                pass
+        if not label_text:
+            node = commands.viewNode()
+            if node is not None:
+                try:
+                    label_text = extra_commands.uiName(node)
+                except Exception:
+                    pass
+        if len(label_text) > 40:
+            target_w = max(target_w, 339)
+        if target_w > base.width() or target_h < base.height():
+            base.setMinimumSize(0, 0)
+            base.setMaximumSize(16777215, 16777215)
+            base.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+            base.resize(target_w, target_h)
+            if dock is not None:
+                dock.setMinimumWidth(target_w)
+                dock.resize(target_w, target_h)
+        else:
+            base.setMinimumSize(0, 0)
+            base.setMaximumSize(16777215, 16777215)
+            base.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+            if dock is not None:
+                dock.setMinimumWidth(0)
+            if (tree is None or tree.columnWidth(0) <= TREE_WIDE_COL0) and (
+                not label_text or len(label_text) <= 40
+            ):
+                if base.width() != 319 or base.height() != 598:
+                    base.resize(319, 598)
+                    if dock is not None:
+                        dock.resize(319, dock.height())
+    except Exception:
+        pass
 
 
 def _node_from_index(index: QModelIndex, model: QStandardItemModel) -> str:
@@ -210,6 +272,11 @@ class ThumbnailWidget(QLabel):
         if not pixmap.isNull():
             self.setPixmap(pixmap)
 
+    def load_path(self, path: str) -> None:
+        pixmap = QPixmap.fromImage(QtGui.QImage(path), Qt.AutoColor)
+        if not pixmap.isNull():
+            self.setPixmap(pixmap)
+
 
 class FilmstripWidget(QLabel):
     def __init__(self, parent=None):
@@ -224,6 +291,12 @@ class FilmstripWidget(QLabel):
         return self._loaded
 
     def load(self, filmstrip_image: QtGui.QImage) -> None:
+        if not filmstrip_image.isNull():
+            self._strip = filmstrip_image
+            self._loaded = True
+
+    def load_path(self, path: str) -> None:
+        filmstrip_image = QtGui.QImage(path)
         if not filmstrip_image.isNull():
             self._strip = filmstrip_image
             self._loaded = True
@@ -265,8 +338,14 @@ class SourcePreviewWidget(QWidget):
     def loadThumbnail(self, image: QtGui.QImage) -> None:
         self._thumbnail.load(image)
 
+    def loadThumbnailPath(self, path: str) -> None:
+        self._thumbnail.load_path(path)
+
     def loadStrip(self, image: QtGui.QImage) -> None:
         self._filmstrip.load(image)
+
+    def loadStripPath(self, path: str) -> None:
+        self._filmstrip.load_path(path)
 
     def event(self, event) -> bool:
         if event.type() == QtCore.QEvent.HoverEnter:
@@ -413,6 +492,7 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         self._prev_view_button = self._base_widget.findChild(QtWidgets.QToolButton, "prevViewButton")
         self._next_view_button = self._base_widget.findChild(QtWidgets.QToolButton, "nextViewButton")
         self._ui_tree_widget = self._base_widget.findChild(QtWidgets.QTreeWidget, "uiTreeWidget")
+        self._splitter = self._base_widget.findChild(QtWidgets.QSplitter, "splitter")
 
         self._lazy_update_timer = QTimer(self._dock_widget)
         self._lazy_update_timer.setSingleShot(True)
@@ -596,27 +676,8 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         if node is not None:
             commands.sendInternalEvent("session-manager-load-ui", node)
 
-    def _ensure_movieproc_srgb(self, group: str) -> None:
-        """Match Mu golden baseline: smptebars movieproc uses sRGB2linear=1."""
-        try:
-            for n in commands.nodesInGroup(group):
-                if commands.nodeType(n) != "RVLinearizePipelineGroup":
-                    continue
-                for m in commands.nodesInGroup(n):
-                    if commands.nodeType(m) == "RVLinearize":
-                        prop = m + ".color.sRGB2linear"
-                        if commands.propertyExists(prop):
-                            commands.setIntProperty(prop, [1], True)
-        except Exception:
-            pass
-
     def _on_source_group_complete(self, event) -> None:
         event.reject()
-        try:
-            group = event.contents().split(";;")[0]
-            self._ensure_movieproc_srgb(group)
-        except Exception:
-            pass
         if self._progressive_loading_in_progress:
             return
         self.update_tree()
@@ -644,8 +705,22 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         tab = self._tab_widget_ref()
         if tab is not None:
             tab.currentChanged.connect(self._tab_change_slot)
+        if self._splitter is not None:
+            self._splitter.splitterMoved.connect(self._splitter_moved)
         self._view_tree_view.expanded.connect(lambda idx: self._set_item_expanded_state(idx, 1))
         self._view_tree_view.collapsed.connect(lambda idx: self._set_item_expanded_state(idx, 0))
+
+    def _splitter_moved(self, pos: int, _index: int) -> None:
+        if self._splitter is None:
+            return
+        prop_name = "#Session.sm_window.splitter"
+        height = self._splitter.height()
+        if height <= 0:
+            return
+        fpos = float(pos) / float(height)
+        if not commands.propertyExists(prop_name):
+            commands.newProperty(prop_name, commands.FloatType, 1)
+        commands.setFloatProperty(prop_name, [fpos], True)
 
     def _icon_for_node(self, node: str) -> QIcon:
         cprop = node + ".sm_state.componentSubType"
@@ -828,6 +903,13 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
     def _make_source_row_widget(self, node: str) -> QWidget:
         widget = QWidget()
         widget.setObjectName("sourceRowWidget")
+        base = self._view_tree_view.palette().color(QtGui.QPalette.Base)
+        for container in (widget,):
+            container.setAttribute(Qt.WA_StyledBackground, True)
+            container.setAutoFillBackground(True)
+            pal = container.palette()
+            pal.setColor(QtGui.QPalette.Window, base)
+            container.setPalette(pal)
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(SOURCE_ROW_MARGIN, 0, SOURCE_ROW_MARGIN, 0)
         layout.setSpacing(SOURCE_ROW_SPACING)
@@ -843,6 +925,11 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
 
         text_widget = QWidget(widget)
         text_widget.setObjectName("sourceTextWidget")
+        text_widget.setAttribute(Qt.WA_StyledBackground, True)
+        text_widget.setAutoFillBackground(True)
+        text_pal = text_widget.palette()
+        text_pal.setColor(QtGui.QPalette.Window, base)
+        text_widget.setPalette(text_pal)
         text_layout = QVBoxLayout(text_widget)
         text_layout.setSpacing(SOURCE_TEXT_SPACING)
 
@@ -856,11 +943,10 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
             try:
                 thumb_path = commands.sendInternalEvent("session-manager-get-thumbnail-path", source_node)
                 if thumb_path and os.path.isfile(thumb_path):
-                    thumb_image = self._cached_preview(thumb_path)
-                    preview.loadThumbnail(thumb_image)
+                    preview.loadThumbnailPath(thumb_path)
                     strip_path = commands.sendInternalEvent("session-manager-get-filmstrip-path", source_node)
                     if strip_path and os.path.isfile(strip_path):
-                        preview.loadStrip(self._cached_preview(strip_path))
+                        preview.loadStripPath(strip_path)
                 media_prop = source_node + ".media.movie"
                 if commands.propertyExists(media_prop):
                     movies = commands.getStringProperty(media_prop)
@@ -1038,6 +1124,9 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
             self._view_model.invisibleRootItem().setFlags(Qt.ItemIsEnabled)
             self._select_viewable_node()
             _resize_columns(self._view_tree_view, self._view_model)
+            self._update_nav_ui()
+            _sync_panel_geometry(self)
+            self._select_viewable_node()
         except Exception as exc:
             print("session_manager update_tree: %s" % exc)
 
@@ -1045,6 +1134,9 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         node = commands.viewNode()
         if node is None:
             return
+        cols = self._view_model.columnCount(QModelIndex())
+        smodel = self._view_tree_view.selectionModel()
+        smodel.clear()
         for row in range(self._view_model.rowCount()):
             cat = self._view_model.item(row, 0)
             if cat is None:
@@ -1052,7 +1144,10 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
             item = self._find_node_item(cat, node)
             if item is not None:
                 index = self._view_model.indexFromItem(item)
-                self._view_tree_view.selectionModel().select(index, QtCore.QItemSelectionModel.SelectCurrent)
+                selection = QtCore.QItemSelection(
+                    index, index.sibling(index.row(), cols - 1)
+                )
+                smodel.select(selection, QtCore.QItemSelectionModel.SelectCurrent)
                 self._view_tree_view.scrollTo(index, QAbstractItemView.EnsureVisible)
                 self.update_inputs(node)
                 break
@@ -1089,17 +1184,29 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
                     self._make_source_row_widget(innode),
                 )
 
+    def _refresh_nav_widgets(self) -> None:
+        nav = self._dock_widget.titleBarWidget() if self._dock_widget is not None else None
+        if nav is None and self._base_widget is not None:
+            nav = self._base_widget.findChild(QWidget, "navPanel")
+        if nav is not None:
+            self._view_label = nav.findChild(QLabel, "viewLabel")
+            self._prev_view_button = nav.findChild(QtWidgets.QToolButton, "prevViewButton")
+            self._next_view_button = nav.findChild(QtWidgets.QToolButton, "nextViewButton")
+
     def _update_nav_ui(self) -> None:
         node = commands.viewNode()
         if node is None:
             return
         try:
+            self._refresh_nav_widgets()
+            name = extra_commands.uiName(node)
             if self._view_label is not None:
-                self._view_label.setText(extra_commands.uiName(node))
+                self._view_label.setText(name)
             if self._prev_view_button is not None:
                 self._prev_view_button.setEnabled(commands.previousViewNode() is not None)
             if self._next_view_button is not None:
                 self._next_view_button.setEnabled(commands.nextViewNode() is not None)
+            _sync_panel_geometry(self)
         except RuntimeError:
             pass
 
@@ -1198,6 +1305,13 @@ class SessionManagerMode(SessionManagerInteractions, rvtypes.MinorMode):
         self._restore_tab_state()
         ntype = commands.nodeType(node)
         self._inputs_view.setEnabled(ntype not in ("RVSource", "RVFileSource", "RVImageSource", "RVSourceGroup"))
+        if ntype == "RVSourceGroup" and self._previews_enabled:
+            item = self._item_of_node(self._view_model, node)
+            if item is not None:
+                self._view_tree_view.setIndexWidget(
+                    self._view_model.indexFromItem(item),
+                    self._make_source_row_widget(node),
+                )
         commands.sendInternalEvent("session-manager-load-ui", node)
 
     def _node_inputs_changed(self, event) -> None:

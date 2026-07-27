@@ -19,7 +19,7 @@ import os
 import rv.commands as rvc
 
 import _sm_common as sm
-from qt_scenario_utils import QtWidgets, open_tool_button_menu, click_menu_action, grab_widget_png
+from qt_scenario_utils import QtWidgets, open_tool_button_menu, click_menu_action, grab_widget_png, pump
 
 out_dir = os.environ["GOLDEN_OUT"]
 diag = open(os.path.join(out_dir, "diag.txt"), "w")
@@ -40,6 +40,7 @@ srcA = rvc.addSourceVerbose(["smptebars,start=1,end=24,fps=24.movieproc"])
 groupA = rvc.nodeGroup(srcA)
 srcB = rvc.addSourceVerbose(["smptebars,start=1,end=24,fps=24.movieproc"])
 groupB = rvc.nodeGroup(srcB)
+sm.quiesce_real_previews([srcA, srcB], log=log)
 log("groups:", groupA, groupB)
 
 panel = sm.open_session_manager_panel(log=log)
@@ -68,9 +69,21 @@ log("current view:", rvc.viewNode())
 if rvc.viewNode() != stack:
     log("NOTE: Mu leaves viewNode unchanged after Add > Stack (not defaultSequence/stack)")
 
+# Panel widens after stack + update_tree; let geometry/selection paint settle.
+pump(600)
+tree_view = sm.find_view_tree(panel)
+sm.select_row_by_node(tree_view, stack)
+pump(400)
+
 # --- 3. Behavioral capture -----------------------------------------------------
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)
 log("saved session.rv")
+tree_view = sm.find_view_tree(panel)
+log(
+    "selection at grab:",
+    [i.data(sm.NODE_NAME_ROLE) for i in tree_view.selectionModel().selectedIndexes()],
+)
+log("current view at grab:", rvc.viewNode())
 
 # --- 4. Pixel capture -----------------------------------------------------------
 ok, w, h = grab_widget_png(panel, os.path.join(out_dir, "panel.png"))

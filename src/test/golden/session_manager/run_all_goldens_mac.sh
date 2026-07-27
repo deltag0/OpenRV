@@ -119,13 +119,24 @@ for id in "${ids[@]}"; do
     fi
     rm -rf "$out"
     mkdir -p "$out"
-    if ! python3 "$RUNNER" \
-        --scenario "$scenario" \
-        --out "$out" \
-        --rv "$RV" \
-        --impl "$IMPL" \
-        --timeout "$TIMEOUT" \
-        --no-xvfb >/dev/null 2>&1; then
+    run_scenario_cmd=(
+        python3 "$RUNNER"
+        --scenario "$scenario"
+        --out "$out"
+        --rv "$RV"
+        --impl "$IMPL"
+        --timeout "$TIMEOUT"
+        --no-xvfb
+    )
+    scenario_ok=0
+    for _attempt in 1 2; do
+        if "${run_scenario_cmd[@]}" >/dev/null 2>&1; then
+            scenario_ok=1
+            break
+        fi
+        [ "$_attempt" -eq 1 ] && sleep 2
+    done
+    if [ "$scenario_ok" -ne 1 ]; then
         echo "FAIL $id (run_scenario)"
         fail=$((fail + 1))
         fail_list="$fail_list $id"

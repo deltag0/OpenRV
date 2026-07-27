@@ -38,6 +38,7 @@ rvc.setViewNode(groupA)
 srcB = rvc.addSourceVerbose(["smptebars,start=1,end=24,fps=24.movieproc"])
 groupB = rvc.nodeGroup(srcB)
 rvc.setViewNode(groupB)
+sm.quiesce_real_previews([srcA, srcB], log=log)
 log("current view:", rvc.viewNode(), "previousViewNode:", rvc.previousViewNode())
 
 # --- 2. Open panel, click real prevViewButton -> expect A ----------------------

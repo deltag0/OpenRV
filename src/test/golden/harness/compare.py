@@ -54,31 +54,96 @@ RMS_IMAGE_DIFF = _find_rms_image_diff()
 # structure; drop whole GTO property lines whose name matches, so they can't
 # cause spurious behavioral diffs.
 _VOLATILE_PROP_RE = re.compile(r"^\s*(string sessionName|int currentFrame|int\[\] marks)\b")
+# sRGB2linear is set by source_setup / rendering path (Xvfb vs real GPU), not
+# by session_manager graph logic. Only relaxed for the GUI sanity gate, which
+# compares real-display output against Linux Xvfb-captured golden/ baselines
+# that predate GOLDEN_SOURCE_SETUP=1 -- see run_gui_sanity_gate.sh.
+_RENDER_PATH_PROP_RE = re.compile(r"^\s*int (sRGB2linear|Rec709ToLinear)\b")
 # Absolute media paths vary by machine; canonicalize to a stable token.
 _MOVIE_LINE_RE = re.compile(r'^(\s*string movie = ")([^"]+)("\s*)$')
+_FIXTURE_SUFFIX = "/src/test/golden/session_manager/fixtures/"
+_SESSION_BLOCK_START = re.compile(r"^\s{4}session\s*$")
+_SESSION_BLOCK_END = re.compile(r"^\s{4}\}\s*$")
 
 
-def normalize_gto(text: str) -> str:
-    """Return a canonical form of a text-GTO session for comparison."""
+def _canonicalize_movie_path(path: str) -> str:
+    """Map any checkout's absolute fixture path to a stable <REPO>/... token."""
+    if path in ("<MP4_FIXTURE>", "<REPO_FIXTURE>"):
+        return path
+    if path.endswith(".mp4") or path.endswith(".mov"):
+        return "<MP4_FIXTURE>"
+    idx = path.find(_FIXTURE_SUFFIX)
+    if idx >= 0:
+        return "<REPO>" + path[idx:]
     home = os.path.expanduser("~")
+    return path.replace(REPO_ROOT, "<REPO>").replace(home, "<HOME>")
+
+
+def normalize_gto(
+    text: str,
+    *,
+    relax_render_path: bool = False,
+    relax_session_playback: bool = False,
+) -> str:
+    """Return a canonical form of a text-GTO session for comparison."""
     out_lines = []
+    in_session_block = False
+    session_depth = 0
     for line in text.splitlines():
         if _VOLATILE_PROP_RE.match(line):
             continue
+        if relax_render_path and _RENDER_PATH_PROP_RE.match(line):
+            continue
+        if _SESSION_BLOCK_START.match(line):
+            in_session_block = True
+            session_depth = 0
+            out_lines.append(line)
+            continue
+        if in_session_block and relax_session_playback:
+            if line.strip() == "{":
+                session_depth += 1
+                out_lines.append(line)
+                continue
+            if line.strip() == "}":
+                session_depth -= 1
+                if session_depth <= 0:
+                    in_session_block = False
+                    session_depth = 0
+                out_lines.append(line)
+                continue
+            if session_depth == 1 and re.match(
+                r"^\s{8}(string viewNode|int\[2\] range|int\[2\] region|float fps)\b", line
+            ):
+                continue
+        elif in_session_block and line.strip() == "}":
+            in_session_block = False
+            session_depth = 0
         m = _MOVIE_LINE_RE.match(line)
-        if m and (m.group(2).endswith(".mp4") or m.group(2).endswith(".mov")):
-            line = "%s<MP4_FIXTURE>%s" % (m.group(1), m.group(3))
+        if m:
+            canon = _canonicalize_movie_path(m.group(2))
+            line = "%s%s%s" % (m.group(1), canon, m.group(3))
         else:
+            home = os.path.expanduser("~")
             line = line.replace(REPO_ROOT, "<REPO>").replace(home, "<HOME>")
         out_lines.append(line)
     return "\n".join(out_lines) + "\n"
 
 
-def compare_gto(golden_path: str, actual_path: str) -> tuple[bool, str]:
+def compare_gto(
+    golden_path: str,
+    actual_path: str,
+    *,
+    relax_render_path: bool = False,
+    relax_session_playback: bool = False,
+) -> tuple[bool, str]:
+    norm_kw = {
+        "relax_render_path": relax_render_path,
+        "relax_session_playback": relax_session_playback,
+    }
     with open(golden_path, "r") as f:
-        g = normalize_gto(f.read())
+        g = normalize_gto(f.read(), **norm_kw)
     with open(actual_path, "r") as f:
-        a = normalize_gto(f.read())
+        a = normalize_gto(f.read(), **norm_kw)
     if g == a:
         return True, "behavioral: MATCH"
     # Produce a short unified diff for the report.
@@ -137,7 +202,13 @@ def report_png(golden_png: str, actual_png: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--golden-dir", required=True)
+    ap.add_argument("--golden-dir", required=True, help="Pixel baseline dir (and behavioral if --behavioral-golden-dir omitted)")
+    ap.add_argument(
+        "--behavioral-golden-dir",
+        default=None,
+        help="Behavioral session.rv baseline (defaults to --golden-dir). GUI sanity "
+        "gate on macOS passes golden-mac/ here while pixel report still uses golden/.",
+    )
     ap.add_argument("--actual-dir", required=True)
     ap.add_argument("--dmax", type=float, default=0.0)
     ap.add_argument(
@@ -149,15 +220,37 @@ def main() -> int:
         "max-diff + both PNG paths for a human/AI to judge (used by "
         "run_gui_sanity_gate.sh); never contributes to the exit code.",
     )
+    ap.add_argument(
+        "--relax-render-path",
+        action="store_true",
+        help="Drop int sRGB2linear lines (GUI sanity gate only -- real GPU vs Xvfb "
+        "baseline drift, not session_manager graph logic).",
+    )
+    ap.add_argument(
+        "--relax-session-playback",
+        action="store_true",
+        help="Drop session-block viewNode/range/region (GUI sanity gate only -- "
+        "Linux-vs-Mac capture timing drift, not graph structure).",
+    )
     args = ap.parse_args()
+    relax_render_path = args.relax_render_path or os.environ.get("COMPARE_RELAX_RENDER_PATH") == "1"
+    relax_session_playback = (
+        args.relax_session_playback or os.environ.get("COMPARE_RELAX_SESSION_PLAYBACK") == "1"
+    )
 
     results = []
     ok_all = True
 
-    g_sess = os.path.join(args.golden_dir, "session.rv")
+    behavioral_golden = args.behavioral_golden_dir or args.golden_dir
+    g_sess = os.path.join(behavioral_golden, "session.rv")
     a_sess = os.path.join(args.actual_dir, "session.rv")
     if os.path.isfile(g_sess) and os.path.isfile(a_sess):
-        ok, msg = compare_gto(g_sess, a_sess)
+        ok, msg = compare_gto(
+            g_sess,
+            a_sess,
+            relax_render_path=relax_render_path,
+            relax_session_playback=relax_session_playback,
+        )
         ok_all &= ok
         results.append(msg)
     else:

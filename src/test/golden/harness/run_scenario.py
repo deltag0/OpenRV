@@ -154,9 +154,9 @@ def main() -> int:
     env["GOLDEN_OUT"] = out  # scenario writes artifacts here
     env["GOLDEN_SCENARIO"] = scenario
     env["GOLDEN_BOOTSTRAP"] = os.path.join(_HERE, "golden_bootstrap.py")
-    # tree_readonly pins movieproc sRGB2linear=1; source_setup must be active first.
-    if os.path.basename(scenario) == "tree_readonly.py":
-        env.setdefault("GOLDEN_SOURCE_SETUP", "1")
+    # Movieproc scenarios pin sRGB2linear=1 via source_setup (immediate mode loads
+    # inactive in -pyeval runs). Golden-mac baselines assume this color path.
+    env.setdefault("GOLDEN_SOURCE_SETUP", "1")
     mode_names = parse_mode_names(args.mode)
     if args.impl == "default":
         pass  # deliberately set nothing -- see --impl's help text

@@ -108,6 +108,16 @@ rvc.setFloatProperty(scale_prop, [1.5, 1.5], True)
 log("transform.translate =", rvc.getFloatProperty(trans_prop))
 log("transform.scale =", rvc.getFloatProperty(scale_prop))
 
+# Sync transform_manip tag properties (behavioral parity with Mu).
+try:
+    rvc.activateMode("transform_manip")
+    from transform_manip import sync_editing_tags
+
+    sync_editing_tags()
+except Exception as exc:
+    log("sync tmanip tags:", exc)
+pump(100)
+
 # --- 5. Behavioral capture -----------------------------------------------------
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)
 log("saved session.rv")

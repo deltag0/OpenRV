@@ -37,12 +37,12 @@ source_nodes, group_nodes = sm.add_real_sources(
 )
 log("nodes:", rvc.nodes())
 
-# --- 2. Open the panel so local_thumbnail_gen starts generating previews ------
-panel = sm.open_session_manager_panel(log=log)
-
-# --- 3. Quiesce: wait for a REAL thumbnail + filmstrip for every source ------
+# --- 2. Quiesce before opening the panel (previews on disk when row widgets build)
 sm.quiesce_real_previews(source_nodes, log=log)
 sm.assert_preview_paths_ready(source_nodes, log=log)
+
+# --- 3. Open the panel; tree row widgets load real thumbnails immediately ------
+panel = sm.open_session_manager_panel(log=log)
 
 # --- 4. Behavioral capture -----------------------------------------------------
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)

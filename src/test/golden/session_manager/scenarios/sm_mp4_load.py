@@ -32,9 +32,10 @@ log("SM_TEST_MP4_DIR:", sm.MP4_DIR or "(unset)")
 source_nodes, group_nodes = sm.add_real_sources([mp4], log=log, timeout_ms=120000)
 log("nodes:", rvc.nodes())
 
-panel = sm.open_session_manager_panel(log=log)
 sm.quiesce_real_previews(source_nodes, timeout_ms=120000, log=log)
 sm.assert_preview_paths_ready(source_nodes, log=log)
+
+panel = sm.open_session_manager_panel(log=log)
 
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)
 log("saved session.rv")

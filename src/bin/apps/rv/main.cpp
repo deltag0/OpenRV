@@ -241,11 +241,40 @@ static void setPlatformSpecificLocale()
     // console
 }
 
+// Mu→Python migration: default every session_manager package mode to Python
+// when no RV_MODE_IMPL_* override is already set.
+static void setSessionManagerPythonMigrationDefaults()
+{
+    static const char* kModes[] = {
+        "session_manager",
+        "Composite_edit_mode",
+        "FolderGroup_edit_mode",
+        "LayoutGroup_edit_mode",
+        "RetimeGroup_edit_mode",
+        "SequenceGroup_edit_mode",
+        "SourceGroup_edit_mode",
+        "Stack_edit_mode",
+        "StackGroup_edit_mode",
+        "Switch_edit_mode",
+        "SwitchGroup_edit_mode",
+        "transform_manip",
+        nullptr,
+    };
+    for (const char** mode = kModes; *mode; ++mode)
+    {
+        std::string key = std::string("RV_MODE_IMPL_") + *mode;
+        if (!getenv(key.c_str()))
+            setenv(key.c_str(), "python", 0);
+    }
+}
+
 int utf8Main(int argc, char* argv[])
 {
 #ifdef PLATFORM_LINUX
     XInitThreads();
 #endif
+
+    setSessionManagerPythonMigrationDefaults();
 
 #ifdef PLATFORM_WINDOWS
     // High DPI support is disabled by default on Windows.

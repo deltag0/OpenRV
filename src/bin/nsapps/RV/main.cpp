@@ -260,6 +260,35 @@ void noOpenGLWarnOnStartup(QtMsgType t, const QMessageLogContext& context, const
         std::cout << qmsg.toUtf8().constData() << std::endl;
 }
 
+// Mu→Python migration: default every session_manager package mode to Python
+// when no RV_MODE_IMPL_* override is already set. Matches what the golden
+// harness's --impl python does, but lives in the binary so the GUI sanity
+// gate's --impl default phase exercises the real shipped startup path.
+static void setSessionManagerPythonMigrationDefaults()
+{
+    static const char* kModes[] = {
+        "session_manager",
+        "Composite_edit_mode",
+        "FolderGroup_edit_mode",
+        "LayoutGroup_edit_mode",
+        "RetimeGroup_edit_mode",
+        "SequenceGroup_edit_mode",
+        "SourceGroup_edit_mode",
+        "Stack_edit_mode",
+        "StackGroup_edit_mode",
+        "Switch_edit_mode",
+        "SwitchGroup_edit_mode",
+        "transform_manip",
+        nullptr,
+    };
+    for (const char** mode = kModes; *mode; ++mode)
+    {
+        std::string key = std::string("RV_MODE_IMPL_") + *mode;
+        if (!getenv(key.c_str()))
+            setenv(key.c_str(), "python", 0);
+    }
+}
+
 int main(int argc, char* argv[])
 {
     if (!getenv("HOME"))
@@ -267,6 +296,8 @@ int main(int argc, char* argv[])
         cerr << "ERROR: $HOME is not set in the environment and is required." << endl;
         exit(-1);
     }
+
+    setSessionManagerPythonMigrationDefaults();
 
     //
     //  As of OSX 10.7, interesting settings of the locale can cause crashes in

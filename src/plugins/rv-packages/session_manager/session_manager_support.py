@@ -165,7 +165,7 @@ def rename_by_type(node: str, inputs: list[str]) -> None:
     else:
         name = "%s of %d views " % (basename, n)
 
-    commands.setUIName(node, name)
+    extra_commands.setUIName(node, name)
 
 
 def set_node_request(source_node: str, value: list[str]) -> None:
@@ -221,7 +221,7 @@ def new_sub_component_node(
 
     if folder is None:
         folder = commands.newNode("RVFolderGroup", "%s_components" % node)
-        commands.setUIName(folder, "Components of %s" % extra_commands.uiName(node))
+        extra_commands.setUIName(folder, "Components of %s" % extra_commands.uiName(node))
         set_property(folder + ".sm_state.componentFolderOfNode", node)
         set_property("%s.sm_state.expandState" % folder, [])
 
@@ -234,15 +234,15 @@ def new_sub_component_node(
     set_property(group_node + ".sm_state.componentSubType", sub_type)
 
     if sub_type == MediaSubComponent:
-        commands.setUIName(group_node, "%s (Media %s)" % (node_name, display_name))
+        extra_commands.setUIName(group_node, "%s (Media %s)" % (node_name, display_name))
     elif sub_type == ViewSubComponent:
-        commands.setUIName(group_node, "%s (View %s)" % (node_name, display_name))
+        extra_commands.setUIName(group_node, "%s (View %s)" % (node_name, display_name))
         set_node_request(source_node, comp_prop_value)
     elif sub_type == LayerSubComponent:
-        commands.setUIName(group_node, "%s (Layer %s)" % (node_name, display_name))
+        extra_commands.setUIName(group_node, "%s (Layer %s)" % (node_name, display_name))
         set_node_request(source_node, comp_prop_value)
     elif sub_type == ChannelSubComponent:
-        commands.setUIName(group_node, "%s (Channel %s)" % (node_name, display_name))
+        extra_commands.setUIName(group_node, "%s (Channel %s)" % (node_name, display_name))
         set_node_request(source_node, comp_prop_value)
 
     try:
