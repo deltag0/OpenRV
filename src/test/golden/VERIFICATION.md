@@ -66,7 +66,7 @@ sequentially; on any failure the script exits immediately.
 
 | Gate | Name | Command (orchestrator sets) | Pass criteria |
 |------|------|-----------------------------|---------------|
-| **0** | Runtime clean | `GATE=runtime IMPL=python` | Every scenario: no tracebacks, exceptions, or `runtime.eval` errors in `$out/rv.log` or `traceback.txt` (`harness/runtime_log_check.py`). Enforced on every `run_scenario.py` call, not only in this gate. |
+| **0** | Runtime clean | `GATE=runtime IMPL=python` | Every scenario: no **new** runtime error signatures vs committed Mu `runtime_errors.txt` in the golden dir (`harness/runtime_log_check.py`). Same pre-existing RV noise as Mu is OK; regressions are not. Enforced on every `run_scenario.py` call when `--runtime-golden-dir` is passed. |
 | **1** | Behavioral | `GATE=behavioral IMPL=python` | Every scenario: normalized `session.rv` matches committed golden (node graph, properties, connections). |
 | **2** | Pixel | `GATE=pixel IMPL=python` | Every golden PNG: `rmsImageDiff -cmp -dmax 0` (see [Determinism requirements (gate 2)](#determinism-requirements-gate-2)). |
 | **3** | Default launch | `GATE=default` | Every scenario: behavioral match with `--impl default` (no `RV_MODE_IMPL_*`; RV picks its shipped default). |
@@ -78,10 +78,14 @@ each package's `COVERAGE.md`).
 
 ### Gate 0 — Runtime clean
 
-`run_scenario.py` captures RV stdout/stderr to `$out/rv.log`. Exit code **5** if the log
-or `traceback.txt` contains runtime failures in the package under test. Event-handler
-exceptions (e.g. during widget clicks) do not fail the scenario script itself — this gate
-catches them.
+Mu capture writes `runtime_errors.txt` beside `session.rv` — one normalized
+signature per line (tracebacks collapsed to stable ``Exception @ File …`` form).
+`run_scenario.py` captures RV output to `$out/rv.log`. Exit code **5** if the run
+introduces signatures **not** in that Mu baseline. Pre-existing RV/core noise
+recorded at capture time passes; new package regressions do not. Missing
+`runtime_errors.txt` means an empty baseline (strict until re-capture or
+backfill). Event-handler exceptions do not fail the scenario script itself — this
+gate catches them.
 
 ### Gate 1 — Behavioral
 
@@ -126,15 +130,78 @@ inventory rather than tracked — and noted in a short "Dropped" section per pac
 
 ---
 
+## Primary outcomes (required per package)
+
+**Scenario count is not thoroughness.** Before writing scenarios or capturing baselines,
+every package's `COVERAGE.md` must open with a **Primary outcomes** section (see template
+below). These are the 1–5 things a user would notice if the port broke — not chrome,
+not "mode activated", not widget layout alone.
+
+An agent (or human) must fill this **before** the user approves the behavior inventory.
+Do not capture Mu goldens until Primary outcomes rows are approved.
+
+### Rules
+
+1. **Name the discriminant.** For each primary outcome, state what changes in `session.rv`
+   *and* what should change on screen (if anything). Example: `request.imageComponent`
+   → layer name; viewer shows red vs green vs blue patches from `test_layers.exr`.
+
+2. **At least one scenario per primary outcome must pin the full outcome:**
+   - **Behavioral (B):** the graph property (or equivalent) must differ from the unselected
+     / default state in committed `session.rv` — not merely logged as a NOTE.
+   - **Pixel (P), when user-visible:** if the outcome changes what is displayed, capture
+     **two** viewport states (before/after or A vs B) that **must differ** in the image
+     region, not only in the margin/widget. One PNG of "default red" for every scenario
+     is insufficient.
+
+3. **Fixtures must be used.** If you add a fixture with visually distinct variants (colored
+   layers, two clips, different resolutions), at least one primary-outcome scenario must
+   exercise that discriminant. Do not add discriminants "for manual testing only."
+
+4. **API vs click is not a substitute.** A command-API scenario may pin B; a real-click
+   scenario may pin the trigger. Neither alone satisfies a **user-visible** primary outcome
+   unless the click scenario also asserts B **and** (when applicable) P. Marking the
+   inventory row ✅ while the click golden still has the default/empty outcome is **not
+   allowed** — use 🟡 only until fixed, and do not call coverage complete.
+
+5. **Scenario script must fail capture if outcome wrong.** Use `assert` on properties before
+   `saveSession`. Do not commit baselines when the scenario logs "NOTE: outcome unchanged"
+   unless that unchanged state *is* the behavior under test.
+
+6. **Review checkpoint.** Before `./capture_golden*.sh`, the agent posts the Primary
+   outcomes table to the user. User must confirm each row has a planned scenario id that
+   satisfies rules 2–5.
+
+### COVERAGE.md template (copy into every new package)
+
+```markdown
+## Primary outcomes
+
+| # | User-visible outcome | Graph / property signal | Pixel discriminant | Scenario(s) | B | P |
+|---|----------------------|-------------------------|------------------|---------------|---|---|
+| 1 | … | … | … (e.g. viewport A vs B) | … | req | req if visible |
+
+Rows must be ✅ (or justified 🟡) before migration is done. Secondary behaviors (menus,
+shortcuts, dock/float chrome) are listed in the inventory tables below — they do not
+replace primary outcomes.
+```
+
+**Anti-pattern (layer_select):** many scenarios, colored EXR fixture, but no row that
+selects layer B vs layer A and commits different `imageComponent` **and** different
+viewport image color. That is incomplete coverage regardless of scenario count.
+
+---
+
 ## The harness
 
 Reusable across all packages; lives in `src/test/golden/harness/`.
 
 | File | Role |
 |---|---|
-| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. Captures RV log to `$out/rv.log`; fails on runtime errors unless `--allow-runtime-errors`. Pass `--impl mu\|python` and optional `--mode` to select implementations. When the rv-packages directory name differs from the mode name, pass `--package <dir>` (e.g. `--mode layer_select_mode --package layer_select`). Runs `golden_bootstrap.py` before each scenario. |
-| `runtime_log_check.py` | Scans `rv.log` / `traceback.txt` for runtime failures; used by `run_scenario.py` and `GATE=runtime`. Allowlist for infra-only noise: `runtime_error_allowlist.txt`. |
+| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. Captures RV log to `$out/rv.log`. With `--runtime-golden-dir`, fails on **new** runtime errors vs Mu `runtime_errors.txt`; use `--allow-runtime-errors` for Mu capture only. Pass `--impl mu\|python` and optional `--mode` / `--package`. Runs `golden_bootstrap.py` before each scenario. |
+| `runtime_log_check.py` | Extracts normalized runtime signatures from `rv.log` / `traceback.txt`; delta-check vs golden `runtime_errors.txt`; `--write-baseline` for capture. |
 | `golden_bootstrap.py` | In-RV pre-scenario hook: activates `source_setup` when `GOLDEN_SOURCE_SETUP=1` (set automatically for `tree_readonly.py`). |
+| `migration_loop_agent_reminder.sh` | Sourced by `run_migration_loop*.sh` — prints agent read checklist; loop procedure in `mu-python-migration` skill §5. |
 | `compare.py` | Normalized GTO diff + `rmsImageDiff` pixel compare (gates 1 and 2). Exit 0 = PASS. |
 
 ### Package runners (`session_manager`)
@@ -180,7 +247,7 @@ src/test/golden/
     run_gui_sanity_gate.sh   # conditional sanity step (orchestrator calls this)
     capture_golden.sh        # Mu baseline capture (Linux)
     capture_golden_mac.sh    # Mu baseline capture (macOS)
-    golden/<id>/             # committed Linux baselines: session.rv (+ *.png)
+    golden/<id>/             # committed Linux baselines: session.rv, runtime_errors.txt (+ *.png)
     golden-mac/<id>/         # committed macOS baselines (separate pixel space)
 ```
 
@@ -319,12 +386,6 @@ untested question — Qt/Cocoa apps generally require a WindowServer session to 
 Before relying on this gate in an unattended CI environment, verify RV actually launches and
 renders there first; don't assume the dev-machine result transfers.
 
-**Known bug, `sm_meridian_mp4_load` and `sm_media_add_sources` skipped:** same real-display
-`waitForProgressiveLoading()` hang as the GUI sanity gate above — both are in
-`capture_golden_mac.sh`'s and `run_all_goldens_mac.sh`'s `SKIP_IDS` until fixed. All other 47
-scenarios are captured and determinism-verified in `golden-mac/` as of 2026-07-24 (100% of
-what's currently capturable given the two skips).
-
 **Transient, not a structural bug: `sm_folder_sort` failed its determinism check once**
 during the full-batch capture (a single pixel differed between the two runs — mid-gray value
 shift at one coordinate, everything else identical). The scenario is command-API-driven with
@@ -352,7 +413,7 @@ in order, then conditional GUI sanity and code-review steps if gates 0–2 passe
 
 Scenario iteration lives in `run_all_goldens*.sh`; gate sequencing lives in the
 orchestrator. On any failure the script **exits immediately**. Fix the port, then run the
-**same script again** — that is the loop.
+**same script again** — the agent drives re-runs (see skill §5).
 
 ```bash
 # macOS (typical dev path when golden-mac/ exists):
@@ -379,74 +440,15 @@ Orchestrator env vars (all packages):
 
 If gate 0, 1, or 2 fails, the orchestrator never reaches sanity, review, or gates 3–4.
 
-The **agent** drives the loop: edit the Python port → `./run_migration_loop*.sh` → repeat
-until exit 0 or **15 failed runs** ([allowed operations](#allowed-operations) §2).
-
-Do **not**:
-
-- Run gates or scenarios individually except when debugging one failure
-- Use iteration counters or env vars (`ITERATION=`, etc.)
-- Call migration done until the orchestrator exits 0 **and** sanity pixel review **and**
-  code review (no blocking findings) are satisfied
-- **Stop early because of a blocker** — see [When you hit a blocker](#when-you-hit-a-blocker-keep-going-until-unblocked) below
-
-**Loop algorithm:**
-
-```
-attempts = 0
-while attempts < 15:
-    attempts += 1
-    fix Python port under src/plugins/rv-packages/<package>/
-    run: ./run_migration_loop_mac.sh   # or run_migration_loop.sh on Linux
-    if exit 0:
-        judge NEEDS_AI_REVIEW pixel reports (if any) — real regression → keep looping
-        run code review agent — blocking findings → fix and keep looping
-        if both satisfied → DONE
-    else:
-        read which GATE failed from script output
-        diagnose (diag.txt under /tmp, compare.py on failing scenario)
-        if root cause is still unclear → keep investigating; do not hand off yet
-report failure after 15 attempts
-```
-
-#### When you hit a blocker — keep going until unblocked
-
-A **blocker** is anything that prevents the next gate from passing even though the
-immediate Python diff looks “done”: harness wiring, mode activation/registration, Mu helper
-not loading, segfaults in a render path, optional-package preload under `-noPrefs`, stale
-`rvpkg`/`rvload2`, missing fixtures, etc.
-
-**Do not** treat a blocker as a reason to pause the loop, summarize, or ask the user
-“what next?” unless you genuinely need a product decision or credentials you cannot infer
-from the repo.
-
-**Do** stay in the loop until the blocker is removed:
-
-1. **Name the blocker precisely** — e.g. `LayerSelectRender` inactive (`isModeActive`
-   false), not vague “pixel mismatch”.
-2. **Debug in isolation** — one scenario, `diag.txt`, minimal repro, Mu vs Python, with/without
-   harness flags; read RV stderr and mode-manager messages.
-3. **Try the next fix** — PACKAGE/`rvload2`, preload, separate rvpkg, harness env, Mu bridge,
-   alternate architecture; rebuild staged artifacts when needed.
-4. **Re-run the orchestrator** after each meaningful change (`./run_migration_loop*.sh`, or
-   the single failing gate/scenario while iterating).
-5. **Repeat** until the gate passes or you hit the 15-run cap.
-
-Stopping with “here’s the blocker” without exhausting reasonable fixes counts as an
-**incomplete loop run**. The user expects the agent to **keep doing what it takes** to
-unblock — same session, same task — not defer infrastructure work back to them.
-
-Only escalate to the user when:
-
-- You need an explicit product/architecture choice (e.g. modify a core cpp file)
-- You need assets or credentials not in the repo
-- 15 full loop attempts failed and you can document what was tried
+Each `./run_migration_loop*.sh` run prints an agent reminder via
+`harness/migration_loop_agent_reminder.sh`. **Exit code 0 does not mean migration is done**
+— see [Definition of done](#definition-of-done).
 
 ### On failure — which gate?
 
 | Script output | Typical cause |
 |---------------|---------------|
-| `GATE 0 FAILED` | Runtime error during scenario — tracebacks, `runtime.eval`, exceptions in `$out/rv.log` |
+| `GATE 0 FAILED` | New runtime error vs Mu `runtime_errors.txt` — see `$out/runtime_errors.txt` |
 | `GATE 1 FAILED` | Wrong graph/properties — logic, property writes, mode lifecycle |
 | `GATE 2 FAILED` | Visual regression — layout, GL render, widget state |
 | `SANITY FAILED` | Real-display behavioral drift (same class as gate 1) |
@@ -470,15 +472,6 @@ python3 src/test/golden/harness/compare.py \
 ```
 
 (use `golden/` instead of `golden-mac/` on Linux; add `--no-xvfb` on macOS)
-
-### Loop complete when
-
-- `./run_migration_loop*.sh` exits **0**
-- GUI sanity pixel reports judged acceptable (if any `NEEDS_AI_REVIEW`)
-- Code review: no unresolved **blocking** findings
-- Every `COVERAGE.md` item ✅ (or 🟡 with recorded justification)
-
-Then ask the user about removing Mu sources and updating `PACKAGE`.
 
 ---
 
@@ -509,8 +502,9 @@ programmatically by a loop.
 another fix-and-retry cycle. Non-blocking findings (style, minor nits) are reported but do
 not fail the run.
 
-Conditional step in the [migration loop](#migration-loop) (after gates 0–2 pass). The
-orchestrator prints a reminder; the implementing agent spawns the reviewer and acts on
+Conditional step after gates 0–2 pass in the migration loop — agent procedure in
+[mu-python-migration skill §5](../../.agents/skills/mu-python-migration/SKILL.md).
+The orchestrator prints a reminder; the implementing agent spawns the reviewer and acts on
 blocking findings.
 
 ---
@@ -520,16 +514,19 @@ blocking findings.
 A package migration is accepted when:
 
 1. Every coverage item in `COVERAGE.md` is ✅ (a passing golden scenario pins it).
-2. [The five gates](#the-five-gates) pass via `./run_migration_loop*.sh` on the target
+2. **Primary outcomes** (top of `COVERAGE.md`) are all ✅ — each has behavioral pin and,
+   when user-visible, pixel before/after (see [Primary outcomes](#primary-outcomes-required-per-package)).
+3. [The five gates](#the-five-gates) pass via `./run_migration_loop*.sh` on the target
    platform(s).
-3. [GUI sanity](#gui-sanity-real-display) has run: behavioral matches; pixel report reviewed
+4. [GUI sanity](#gui-sanity-real-display) has run: behavioral matches; pixel report reviewed
    and judged acceptable.
-4. On macOS (if in scope): compare against `golden-mac/` — see [Mac-native capture](#mac-native-capture).
-5. No item is left 🟡 without an explicit, recorded justification.
-6. Any cross-package API the package exposes (callable from other Mu/Python packages)
+5. On macOS (if in scope): compare against `golden-mac/` — see [Mac-native capture](#mac-native-capture).
+6. No inventory item is left 🟡 without an explicit, recorded justification (primary
+   outcomes may not stay 🟡).
+7. Any cross-package API the package exposes (callable from other Mu/Python packages)
    remains callable — verified by a scenario or integration check before the Mu source is
    removed.
-7. The [code review agent](#code-review-agent) has run against this iteration's diff with no
+8. The [code review agent](#code-review-agent) has run against this iteration's diff with no
    unresolved blocking findings.
 
 ## Allowed Operations

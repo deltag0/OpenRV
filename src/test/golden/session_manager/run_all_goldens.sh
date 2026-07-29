@@ -118,6 +118,7 @@ for id in "${ids[@]}"; do
         --rv "$RV" \
         --impl "$IMPL" \
         --timeout "$TIMEOUT" \
+        --runtime-golden-dir "$golden_dir" \
         "${runner_extra[@]}" >/dev/null 2>&1; then
         echo "FAIL $id (run_scenario)"
         fail=$((fail + 1))

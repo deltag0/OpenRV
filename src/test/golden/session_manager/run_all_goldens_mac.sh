@@ -127,6 +127,7 @@ for id in "${ids[@]}"; do
         --impl "$IMPL"
         --timeout "$TIMEOUT"
         --no-xvfb
+        --runtime-golden-dir "$golden_dir"
     )
     scenario_ok=0
     for _attempt in 1 2; do

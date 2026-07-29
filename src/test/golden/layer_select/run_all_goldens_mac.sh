@@ -28,7 +28,7 @@ DMAX="${DMAX:-0}"
 #   pixel      — gate 2 only (PNG artifacts)
 #   both       — gates 1+2 (full compare)
 #   default    — gate 3: run scenarios with --impl default, behavioral only
-#   runtime    — gate 0: Python scenarios; fail on ANY RV runtime error (see harness/runtime_log_check.py)
+#   runtime    — gate 0: no NEW runtime errors vs Mu golden runtime_errors.txt
 GATE="${GATE:-both}"
 
 LS_MODE="${LS_MODE:-layer_select_mode}"
@@ -103,7 +103,7 @@ case "$GATE" in
     behavioral) gate_note="behavioral-only" ;;
     pixel)      gate_note="pixel-only dmax=$DMAX" ;;
     default)    gate_note="default-launch behavioral-only" ;;
-    runtime)    gate_note="runtime-clean (no RV errors in rv.log)" ;;
+    runtime)    gate_note="runtime delta vs Mu golden (runtime_errors.txt)" ;;
 esac
 
 echo "layer_select goldens (Mac): impl=$IMPL gate=$GATE ($gate_note) timeout=${TIMEOUT}s (${#ids[@]} scenarios)"
@@ -125,13 +125,15 @@ for id in "${ids[@]}"; do
     mkdir -p "$out"
     menu_bar_flag=""
     [ "$id" = "ls_activate_menu" ] && menu_bar_flag="--menu-bar"
+    runtime_golden_flag=(--runtime-golden-dir "$golden_dir")
     if ! python3 "$RUNNER" \
         --scenario "$scenario" --out "$out" --rv "$RV" \
         --impl "$IMPL" --no-xvfb --timeout "$TIMEOUT" \
         $menu_bar_flag \
-        "${RUNNER_MODE[@]}" >/dev/null 2>&1; then
+        "${RUNNER_MODE[@]}" \
+        "${runtime_golden_flag[@]}" >/dev/null 2>&1; then
         if [ "$GATE" = "runtime" ]; then
-            echo "FAIL $id (runtime — see $out/rv.log and runtime_errors.txt)"
+            echo "FAIL $id (runtime — new errors vs golden; see $out/runtime_errors.txt)"
         else
             echo "FAIL $id (run_scenario)"
         fi

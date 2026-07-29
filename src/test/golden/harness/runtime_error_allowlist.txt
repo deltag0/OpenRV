@@ -1,6 +1,5 @@
-# One regex per line — matched against entire traceback blocks or error lines.
-# Use ONLY for known RV startup/infra noise outside the package under migration.
-# Never allowlist runtime.eval failures or tracebacks in the migrated package.
+# Legacy — unused by Gate 0 (delta vs Mu runtime_errors.txt is the oracle).
+# Kept for reference only.
 #
 SequenceGroup_edit_mode\.py
 SequenceGroupEditMode

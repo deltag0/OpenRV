@@ -114,7 +114,7 @@ case "$GATE" in
     behavioral) compare_note="behavioral-only" ;;
     pixel)      compare_note="pixel-only dmax=$DMAX" ;;
     default)    compare_note="default-launch behavioral-only" ;;
-    runtime)    compare_note="runtime-clean (no RV errors in rv.log)" ;;
+    runtime)    compare_note="runtime delta vs Mu golden (runtime_errors.txt)" ;;
 esac
 if [ "$COMPARE_BEHAVIORAL_ONLY" = "1" ]; then
     compare_note="behavioral-only"
@@ -146,6 +146,7 @@ for id in "${ids[@]}"; do
     mkdir -p "$out"
     menu_bar_flag=""
     [ "$id" = "ls_activate_menu" ] && menu_bar_flag="--menu-bar"
+    runtime_golden_flag=(--runtime-golden-dir "$golden_dir")
     if ! python3 "$RUNNER" \
         --scenario "$scenario" \
         --out "$out" \
@@ -154,9 +155,10 @@ for id in "${ids[@]}"; do
         --timeout "$TIMEOUT" \
         $menu_bar_flag \
         "${RUNNER_MODE[@]}" \
-        "${runner_extra[@]}" >/dev/null 2>&1; then
+        "${runner_extra[@]}" \
+        "${runtime_golden_flag[@]}" >/dev/null 2>&1; then
         if [ "$GATE" = "runtime" ]; then
-            echo "FAIL $id (runtime — see $out/rv.log and runtime_errors.txt)"
+            echo "FAIL $id (runtime — new errors vs golden; see $out/runtime_errors.txt)"
         else
             echo "FAIL $id (run_scenario)"
         fi

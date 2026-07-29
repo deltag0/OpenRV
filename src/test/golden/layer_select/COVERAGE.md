@@ -34,7 +34,7 @@ sub-components (`sm_subcomponents`), not this widget.
 | `src/test/golden/layer_select/scenarios/*.py` | Golden scenarios (see tables below) |
 | `src/test/golden/layer_select/run_all_goldens.sh` | Linux gate runner (Xvfb) |
 | `src/test/golden/layer_select/run_all_goldens_mac.sh` | macOS gate runner (`golden-mac/`) |
-| `src/test/golden/layer_select/run_migration_loop_mac.sh` | Migration loop orchestrator — see [`../VERIFICATION.md`](../VERIFICATION.md#migration-loop-4-mandatory-gates--conditional-sanity--review) |
+| `src/test/golden/layer_select/run_migration_loop_mac.sh` | Migration loop orchestrator — scripts/env: [`../VERIFICATION.md`](../VERIFICATION.md#migration-loop); agent procedure: [`mu-python-migration` skill §5](../../../.agents/skills/mu-python-migration/SKILL.md) |
 | `src/test/golden/layer_select/run_gui_sanity_gate.sh` | GUI sanity (orchestrator calls this after gates 1+2) |
 | `src/test/golden/layer_select/fixtures/layers.env.example` | Document env vars for multi-layer EXR fixture |
 
@@ -67,7 +67,7 @@ has empty `imageComponent` while `ls_select_layer` pins selection via API).
 
 ## Migration loop (this package)
 
-General method: [VERIFICATION.md § Migration loop](../VERIFICATION.md#migration-loop-4-mandatory-gates--conditional-sanity--review).
+General method: orchestrator in [VERIFICATION.md § Migration loop](../VERIFICATION.md#migration-loop); agent loop in [mu-python-migration skill §5](../../../.agents/skills/mu-python-migration/SKILL.md).
 
 ```bash
 cd src/test/golden/layer_select
@@ -213,4 +213,4 @@ loop for that.
 1. ~~User approves file inventory~~ ✓
 2. ~~EXR fixture (`fixtures/test_layers.exr`)~~ ✓
 3. ~~Capture Mu baselines (`capture_golden_mac.sh`)~~ ✓
-4. Run migration loop: `./run_migration_loop_mac.sh` until exit 0 ([`VERIFICATION.md`](../VERIFICATION.md#migration-loop-4-mandatory-gates--conditional-sanity--review))
+4. Run migration loop: `./run_migration_loop_mac.sh` until exit 0 ([skill §5](../../../.agents/skills/mu-python-migration/SKILL.md); [Definition of done](../VERIFICATION.md#definition-of-done))

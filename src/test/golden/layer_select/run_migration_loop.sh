@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # Full migration loop — layer_select (Linux, golden/ under Xvfb).
-# Same gate order as run_migration_loop_mac.sh — see ../VERIFICATION.md
-# On blockers, keep working until unblocked (VERIFICATION.md § "When you hit a blocker").
+# Same gate order as run_migration_loop_mac.sh.
+# AI instructions: .agents/skills/mu-python-migration/SKILL.md §5
+# Verification contract: src/test/golden/VERIFICATION.md
 #
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HERE/../../../.." && pwd)"
+GOLDEN_PKG_DIR="$HERE"
+# shellcheck disable=SC1091
+source "$REPO_ROOT/src/test/golden/harness/migration_loop_agent_reminder.sh"
 SKIP_SANITY="${SKIP_SANITY:-0}"
 SKIP_REVIEW="${SKIP_REVIEW:-0}"
 
 echo "=============================================="
 echo "layer_select migration loop (Linux)"
-echo "See: $(cd "$HERE/../../../.." && pwd)/src/test/golden/VERIFICATION.md"
+echo "See: $(cd "$HERE/../../../.." && pwd)/.agents/skills/mu-python-migration/SKILL.md §5"
 echo "=============================================="
 
 if [ ! -d "$HERE/golden/ls_activate" ]; then

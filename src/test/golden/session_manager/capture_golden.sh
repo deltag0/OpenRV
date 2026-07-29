@@ -27,6 +27,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG="$HERE"
 REPO_ROOT="$(cd "$PKG/../../../.." && pwd)"
 RUNNER="$REPO_ROOT/src/test/golden/harness/run_scenario.py"
+RUNTIME_CHECK="$REPO_ROOT/src/test/golden/harness/runtime_log_check.py"
 RMS_IMAGE_DIFF="${RMS_IMAGE_DIFF:-$REPO_ROOT/_build/stage/app/bin/rmsImageDiff}"
 RV="${RV:-$REPO_ROOT/_build/stage/app/bin/rv}"
 SCENARIOS="$PKG/scenarios"
@@ -124,7 +125,8 @@ for id in "${ids[@]}"; do
     # killed the entire script, silently, with no summary).
     if ! python3 "$RUNNER" \
         --scenario "$scenario" --out "$out1" --rv "$RV" \
-        --impl mu --timeout "$TIMEOUT"; then
+        --impl mu --timeout "$TIMEOUT" \
+        --allow-runtime-errors; then
         echo "FAIL $id (run_scenario exited non-zero on run 1 -- timeout or crash)"
         fail=$((fail + 1)); fail_list="$fail_list $id"
         continue
@@ -139,7 +141,8 @@ for id in "${ids[@]}"; do
     mkdir -p "$out2"
     if ! python3 "$RUNNER" \
         --scenario "$scenario" --out "$out2" --rv "$RV" \
-        --impl mu --timeout "$TIMEOUT"; then
+        --impl mu --timeout "$TIMEOUT" \
+        --allow-runtime-errors; then
         echo "FAIL $id (run_scenario exited non-zero on run 2 -- timeout or crash)"
         fail=$((fail + 1)); fail_list="$fail_list $id"
         continue
@@ -155,6 +158,14 @@ for id in "${ids[@]}"; do
         echo "FAIL $id: session.rv differs between two back-to-back runs -- not deterministic, not committing"
         det_ok=0
     fi
+    tmp1="$(mktemp)" tmp2="$(mktemp)"
+    python3 "$RUNTIME_CHECK" --write-baseline "$out1" "$tmp1" >/dev/null
+    python3 "$RUNTIME_CHECK" --write-baseline "$out2" "$tmp2" >/dev/null
+    if ! diff -q "$tmp1" "$tmp2" >/dev/null 2>&1; then
+        echo "FAIL $id: runtime_errors.txt differs between runs -- not deterministic, not committing"
+        det_ok=0
+    fi
+    rm -f "$tmp1" "$tmp2"
     for png in "$out1"/*.png; do
         [ -f "$png" ] || continue
         name="$(basename "$png")"
@@ -176,6 +187,7 @@ for id in "${ids[@]}"; do
     rm -rf "$dest"
     mkdir -p "$dest"
     cp "$out1/session.rv" "$dest/"
+    python3 "$RUNTIME_CHECK" --write-baseline "$out1" "$dest/runtime_errors.txt"
     for png in "$out1"/*.png; do
         [ -f "$png" ] || continue
         cp "$png" "$dest/"

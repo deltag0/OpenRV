@@ -13,7 +13,8 @@
 #   SKIP_REVIEW=1 ./run_migration_loop_mac.sh
 #   SKIP_PIXEL_GATE=1 ./run_migration_loop_mac.sh   # accept Gate 2 failure, run Gates 3+4
 #
-# AI instructions: src/test/golden/VERIFICATION.md
+# AI instructions: .agents/skills/mu-python-migration/SKILL.md §5
+# Verification contract: src/test/golden/VERIFICATION.md
 #
 set -euo pipefail
 
@@ -24,6 +25,9 @@ fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../../.." && pwd)"
+GOLDEN_PKG_DIR="$HERE"
+# shellcheck disable=SC1091
+source "$REPO_ROOT/src/test/golden/harness/migration_loop_agent_reminder.sh"
 SKIP_SANITY="${SKIP_SANITY:-0}"
 SKIP_REVIEW="${SKIP_REVIEW:-0}"
 
@@ -36,7 +40,7 @@ echo
 echo ">>> GATE 0 (MANDATORY): Runtime clean — no RV errors during Python scenarios"
 echo "    (see src/test/golden/harness/runtime_log_check.py; rv.log per scenario under /tmp/golden_*)"
 if ! GATE=runtime IMPL=python "$HERE/run_all_goldens_mac.sh"; then
-    echo "GATE 0 FAILED — fix runtime errors (tracebacks, runtime.eval, exceptions in rv.log)"
+    echo "GATE 0 FAILED — new runtime errors vs Mu golden (see runtime_errors.txt under /tmp/golden_*)"
     exit 1
 fi
 

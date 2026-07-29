@@ -25,7 +25,7 @@ import os
 import subprocess
 import sys
 
-from runtime_log_check import check_out_dir
+from runtime_log_check import check_runtime_delta, signatures_from_out_dir
 
 # Repo root = five levels up from this file
 #   src/test/golden/harness/run_scenario.py -> <repo>
@@ -170,7 +170,12 @@ def main() -> int:
     ap.add_argument(
         "--allow-runtime-errors",
         action="store_true",
-        help="Do not fail when RV log contains runtime errors (debug only).",
+        help="Skip runtime-error check (Mu capture / debug only).",
+    )
+    ap.add_argument(
+        "--runtime-golden-dir",
+        default=None,
+        help="Golden dir with runtime_errors.txt; fail only on NEW errors vs Mu baseline.",
     )
     ap.add_argument(
         "--package",
@@ -178,7 +183,6 @@ def main() -> int:
         default=[],
         help="rv-packages/ directory name(s) to prepend to PYTHONPATH when the package "
         "folder differs from --mode (repeatable; each value may be comma-separated). "
-        "Also used to scope runtime-error detection. "
         "Example: --mode layer_select_mode --package layer_select",
     )
     args = ap.parse_args()
@@ -232,10 +236,6 @@ def main() -> int:
         if pkg_dir not in pkg_dirs:
             pkg_dirs.append(pkg_dir)
     package_names = parse_package_names(None, args.package)
-    package_markers = list(package_names)
-    for name in mode_names:
-        if name not in package_markers:
-            package_markers.append(name)
     mu_module_dirs: list[str] = []
     for pkg_dir in pkg_dirs:
         if os.path.isdir(pkg_dir):
@@ -317,18 +317,32 @@ def main() -> int:
         return proc.returncode
 
     if not args.allow_runtime_errors:
-        violations = check_out_dir(out, package_markers=package_markers or None)
-        if violations:
-            err_path = os.path.join(out, "runtime_errors.txt")
-            with open(err_path, "w", encoding="utf-8") as ef:
-                ef.write("\n\n".join(violations))
-            print("FAIL: runtime errors during scenario (see rv.log, runtime_errors.txt)", file=sys.stderr)
-            for v in violations[:3]:
-                print("---", file=sys.stderr)
-                print(v[:2000], file=sys.stderr)
-            if len(violations) > 3:
-                print(f"... and {len(violations) - 3} more", file=sys.stderr)
-            return 5
+        if args.runtime_golden_dir:
+            new_errors = check_runtime_delta(out, os.path.abspath(args.runtime_golden_dir))
+            if new_errors:
+                print(
+                    "FAIL: new runtime errors vs Mu golden "
+                    "(see rv.log, runtime_errors.txt)",
+                    file=sys.stderr,
+                )
+                for err in new_errors[:5]:
+                    print("---", file=sys.stderr)
+                    print(err, file=sys.stderr)
+                if len(new_errors) > 5:
+                    print(f"... and {len(new_errors) - 5} more", file=sys.stderr)
+                return 5
+        else:
+            sigs = signatures_from_out_dir(out)
+            if sigs:
+                print(
+                    "FAIL: runtime errors during scenario "
+                    "(pass --runtime-golden-dir for delta check; see rv.log)",
+                    file=sys.stderr,
+                )
+                for sig in sorted(sigs)[:5]:
+                    print("---", file=sys.stderr)
+                    print(sig, file=sys.stderr)
+                return 5
 
     print("[run_scenario] OK", file=sys.stderr)
     return 0
