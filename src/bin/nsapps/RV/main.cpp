@@ -279,6 +279,7 @@ static void setSessionManagerPythonMigrationDefaults()
         "Switch_edit_mode",
         "SwitchGroup_edit_mode",
         "transform_manip",
+        "layer_select_mode",
         nullptr,
     };
     for (const char** mode = kModes; *mode; ++mode)

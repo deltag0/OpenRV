@@ -6,7 +6,6 @@
 #
 # Other env vars:
 #   SM_TEST_MP4_FIXTURE   single file for sm_mp4_load.py
-#   SM_TEST_MP4_QUIESCE=1 wait for thumbnail+filmstrip on every clip (slow)
 #   RV                    path to rv launcher (default: staged build)
 #   IMPL                  mu or python (default: python)
 #

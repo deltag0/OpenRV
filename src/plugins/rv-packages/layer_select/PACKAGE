@@ -8,7 +8,7 @@ openrv: 1.0.0
 optional: true
 
 modes: 
-  - file: layer_select_mode.mu
+  - file: layer_select_mode.py
     menu: Tools/Layer Selector
     shortcut: '/' 
     event: 'key-down--/'
@@ -32,4 +32,3 @@ description: |
   This widget can be docked in the margin or allowed to float. Right click for
   the settings menu to change the setting.
   <p>
-

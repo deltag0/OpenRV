@@ -20,7 +20,6 @@ No paths are hardcoded in the repo. Set these via the shell or `mp4.env`:
 |---|---|---|
 | `SM_TEST_MP4_DIR` | for `sm_mp4_all.py` | Directory of `*.mp4` clips to load |
 | `SM_TEST_MP4_FIXTURE` | optional | Single MP4 for `sm_mp4_load.py` |
-| `SM_TEST_MP4_QUIESCE` | optional | `1` = wait for thumbnail+filmstrip on every clip (slow) |
 | `SM_TEST_IMAGE_FIXTURE` | optional | Still image (default: `bars_frame.jpg` here) |
 | `SM_TEST_MOVIE_FIXTURE` | optional | Single movie (default: `bars_clip.mp4` here) |
 

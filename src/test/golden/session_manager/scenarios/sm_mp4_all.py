@@ -6,8 +6,7 @@ production clip sets are too environment-specific for committed
 (after setting ``SM_TEST_MP4_DIR`` or ``fixtures/mp4.env``).
 
 Writes $GOLDEN_OUT/diag.txt and session.rv; panel.png if the dock is found.
-Set SM_TEST_MP4_QUIESCE=1 to wait for thumbnail+filmstrip on every clip
-(slow).
+Always waits for thumbnail+filmstrip on every clip before capture (slow).
 """
 
 import os
@@ -56,15 +55,13 @@ if len(actual_groups) != expected_groups:
 
 panel = sm.open_session_manager_panel(log=log)
 
-if sm.MP4_QUIESCE:
-    log("SM_TEST_MP4_QUIESCE=1: waiting for previews on all clips...")
-    sm.quiesce_real_previews(
-        source_nodes,
-        timeout_ms=max(600000, 15000 * len(source_nodes)),
-        log=log,
-    )
-else:
-    log("preview quiesce skipped (set SM_TEST_MP4_QUIESCE=1 to enable)")
+log("waiting for thumbnail+filmstrip on all clips...")
+sm.quiesce_real_previews(
+    source_nodes,
+    timeout_ms=max(600000, 15000 * len(source_nodes)),
+    log=log,
+)
+sm.assert_preview_paths_ready(source_nodes, log=log)
 
 rvc.saveSession(os.path.join(out_dir, "session.rv"), True, False, False)
 log("saved session.rv")

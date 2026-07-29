@@ -7,8 +7,10 @@
 ## Goal
 
 Migrate OpenRV's large, aging Mu codebase (~57K lines across ~194 source files)
-to Python **section by section**, using AI-driven edit/verify loops that are
-gated by automated **golden tests**. Python is already a first-class peer
+to Python in **one migration loop per package**, using AI-driven edit/verify
+iterations gated by automated **golden tests**. The loop ports the whole package;
+you may tackle areas in any order within the loop, but Mu sources stay until
+everything in `COVERAGE.md` passes. Python is already a first-class peer
 extension language in RV (full `rv.rvtypes` parity, all 368 `commands` exposed
 1:1, 20+ shipped Python packages), so this paves an existing road rather than
 inventing a new one.
@@ -96,7 +98,7 @@ nondeterminism and their fixes:
 | Source | Fix |
 |---|---|
 | GPU/driver variance | Rendered through **software Mesa under xvfb**, not the GPU — deterministic across machines given a pinned Mesa version. (Verified: two runs pixel-identical.) |
-| Async thumbnails | Pilot section 1 (read-only tree) uses **fixtures with no media**, so no thumbnails exist. Later media-bearing sections: block `wait-for-stable` until all thumbnail jobs complete, **or** crop the thumbnail column out of the PNG before diffing (external crop → equal-size images → `rmsImageDiff`). |
+| Async thumbnails | Media-free scenarios (e.g. read-only tree) use **fixtures with no media**, so no thumbnails exist. Media-bearing scenarios: block `wait-for-stable` until all thumbnail jobs complete, **or** crop the thumbnail column out of the PNG before diffing (external crop → equal-size images → `rmsImageDiff`). |
 | Fonts / hinting | Pin a bundled font + fixed `fontconfig` in the CI container; set a fixed `QT_FONT_DPI`. |
 | HiDPI scaling | `QT_SCALE_FACTOR=1`, `QT_ENABLE_HIGHDPI_SCALING=0`, fixed widget size. |
 | Animations / hover | Disable animations; scenarios drive via `rv.commands`, so no stray focus/hover. |
@@ -107,10 +109,10 @@ only if residual noise is *observed*, and always log `-m` (max error) so drift
 surfaces instead of being silently absorbed. Never loosen `dmax` to paper over
 flakiness — that reintroduces the hack-the-oracle risk.
 
-### OpenGL viewport slices (future)
+### OpenGL viewport (future)
 
-If a future slice needs the OpenGL viewport, GPU rendering is **not**
-bit-reproducible across cards/drivers, so gated goldens for those slices must be
+If future work needs the OpenGL viewport, GPU rendering is **not**
+bit-reproducible across cards/drivers, so gated goldens for that work must be
 rendered through **OSMesa software** (`rvio_sw`), keeping them deterministic. A
 GPU-bound headless X server (`src/test/golden/harness/headless_x.sh`) is reserved
 for interactive smoke tests, **not** gated goldens. Plain xvfb also falls back to
@@ -170,7 +172,7 @@ src/test/golden/
 Scenarios trigger panel logic by calling the same commands the package reacts to
 (e.g. `newNode`, `setViewNode`, `sendInternalEvent`) rather than synthesizing Qt
 mouse/keyboard events. This is deterministic and headless-friendly. Synthetic Qt
-input events (`QTest`) are deferred until the drag-and-drop slices that genuinely
+input events (`QTest`) are deferred until drag-and-drop areas that genuinely
 require simulated drags.
 
 ## Mu/Python coexistence during migration
@@ -180,9 +182,9 @@ A mechanism to load *either* the Mu or the new Python `session_manager`
 version and later run the same scenarios against the Python version, without
 deleting the original mid-migration.
 
-## Sectioning of `session_manager`
+## Suggested implementation order (`session_manager`)
 
-Ordered by risk, easiest/most-mappable first:
+Within a single migration loop, lower-risk areas are easier to land first:
 
 1. **Read-only tree population** (pilot) — build the `QStandardItemModel` tree
    from the node graph. Maps most directly to Python; no drag-drop, no custom
@@ -198,21 +200,22 @@ The `local_thumbnail_gen.py` piece is already Python and shared.
 
 ## AI loop mechanics
 
-Per section:
-1. Agent receives the relevant Mu source, a Python skeleton (`MinorMode` +
-   `.ui` load), and the harness command.
+One loop per package:
+
+1. Agent receives the Mu sources, a Python skeleton (`MinorMode` + `.ui` load),
+   and the harness command.
 2. Agent edits Python → runs harness → reads the diff → iterates until behavioral
-   JSON matches exactly and the screenshot is within threshold.
-3. Human reviews the port and the diffs; commit; move to next section.
+   and pixel gates pass for the whole package.
+3. Human reviews the port and the diffs; commit when `COVERAGE.md` is fully green.
 
 **Guardrails:** capped iterations; the loop never edits the golden baselines;
-stops at green; human gate before merge.
+stops when the full package passes; human gate before merge.
 
 ## Risks / open questions
 
 - **Drag-and-drop synthesis headless** — the custom subclasses need simulated
-  drag events; command-API driving can't reach them. Deferred to the last slice
-  with `QTest`.
+  drag events; command-API driving can't reach them. Deferred to drag-and-drop
+  work within the loop, using `QTest`.
 - **Async thumbnail nondeterminism** — requires a robust wait-for-stable before
   screenshot; behavioral gate is unaffected.
 - **Screenshot determinism across platforms** — pin the pixel gate to a single
@@ -221,17 +224,15 @@ stops at green; human gate before merge.
   (`@MU_QT_*@`); the Python port handles this at runtime (try/except PySide2/6),
   as existing Python packages already do.
 
-## Pilot: first AI loop (immediate next steps)
+## Pilot: harness bring-up (historical)
 
 1. Build the minimal harness (driver + capture + compare) — just enough to run
    one scenario end-to-end.
 2. Set up Mu/Python coexistence (toggle which version loads).
-3. Pilot slice: read-only tree population.
-4. Author 1–2 command-API scenarios; capture golden JSON + PNG from the **Mu**
+3. Author command-API scenarios; capture golden JSON + PNG from the **Mu**
    version; commit baselines.
-5. Run the first AI loop on the slice; iterate to green.
-6. Human review; tune wait-for-stable timing and screenshot threshold before
-   widening scope.
+4. Run the migration loop; iterate to green for the full package.
+5. Human review; tune wait-for-stable timing before widening to other packages.
 
-Once the pilot loop is green end-to-end, scaling is repetition: more scenarios →
-riskier slices → other packages, then the broader Mu codebase.
+Once the loop is green end-to-end for a package, repeat the same method for
+other packages, then the broader Mu codebase.

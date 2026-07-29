@@ -43,15 +43,9 @@ MOVIE_FIXTURE = os.environ.get("SM_TEST_MOVIE_FIXTURE") or os.path.join(
 
 # Production / multi-clip MP4 suites: set SM_TEST_MP4_DIR to a directory of *.mp4
 # clips (see fixtures/run_mp4_integration.sh and fixtures/mp4.env.example).
-# SM_TEST_MP4_FIXTURE picks one file; SM_TEST_MP4_QUIESCE=1 enables
-# thumbnail/filmstrip quiesce on multi-clip runs (slow -- off by default).
+# SM_TEST_MP4_FIXTURE picks one file for single-clip scenarios.
 MP4_DIR = os.environ.get("SM_TEST_MP4_DIR", "").strip()
 MP4_FIXTURE = os.environ.get("SM_TEST_MP4_FIXTURE", "").strip()
-MP4_QUIESCE = os.environ.get("SM_TEST_MP4_QUIESCE", "0").strip().lower() in (
-    "1",
-    "true",
-    "yes",
-)
 
 
 def discover_mp4_clips(directory: str) -> list[str]:

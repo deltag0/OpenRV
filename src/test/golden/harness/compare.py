@@ -72,6 +72,11 @@ def _canonicalize_movie_path(path: str) -> str:
         return path
     if path.endswith(".mp4") or path.endswith(".mov"):
         return "<MP4_FIXTURE>"
+    if path.endswith(".exr"):
+        return "<LAYER_EXR_FIXTURE>"
+    idx = path.find("/src/test/golden/layer_select/fixtures/")
+    if idx >= 0:
+        return "<REPO>" + path[idx:]
     idx = path.find(_FIXTURE_SUFFIX)
     if idx >= 0:
         return "<REPO>" + path[idx:]

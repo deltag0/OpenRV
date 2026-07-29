@@ -2,9 +2,8 @@
 
 **Purpose.** This is the exhaustive list of `session_manager` behaviors that MUST keep
 working when the package is ported from Mu to Python. Each item is mapped to how it is
-verified (which gate, which golden scenario) and its current coverage status. A Python
-port is "done" for a slice only when every item in that slice is covered by a passing
-golden scenario.
+verified (which gate, which golden scenario) and its current coverage status. The Python
+port is done when every item here is covered by a passing golden scenario.
 
 **Source of truth.** The Mu implementation:
 `src/plugins/rv-packages/session_manager/` — `session_manager.mu` (generated from
@@ -17,7 +16,7 @@ golden scenario.
 ## Verification method
 
 The gates (Behavioral **B** / Pixel **P**), the coverage-status legend (✅/🟡/⬜), the
-headless run recipe, determinism rules, and the per-slice definition of done are **shared
+headless run recipe, determinism rules, and the definition of done are **shared
 across all package migrations** and defined in
 **[`../VERIFICATION.md`](../VERIFICATION.md)** — read that first. This file is the
 `session_manager`-specific inventory that plugs into that method: the **Gate** column of
@@ -52,7 +51,7 @@ Python port lives under `src/plugins/rv-packages/session_manager/`:
 (staged `PlugIns/Python/` must not shadow source — remove stale copies after
 rebuild if golden runs pick up old artifacts).
 
-**Slice 1 (read-only tree, `tree_readonly`):** Python verified green on macOS
+**Status (`tree_readonly` pilot):** Python verified green on macOS
 (`run_all_goldens_mac.sh`, `golden-mac/tree_readonly`, `-dmax 0`) as of 2026-07-25.
 Mu sources remain in place.
 
@@ -165,7 +164,7 @@ Provided by `local_thumbnail_gen.py` (a separate `load: immediate` Python mode) 
 | H1 | Real thumbnail replaces fallback icon once `rvio` preview job completes | 1877-1888,3188 | P | ⬜ | `sm_media_load`, `sm_mp4_load` (baseline capture pending) |
 | H2 | Real filmstrip becomes available alongside the thumbnail | 1883-1888 | P | ⬜ | `sm_media_load`, `sm_mp4_load` (baseline capture pending) |
 | H4 | Fallback `fallback_thumbnail.png` until real preview arrives | 3322,1867 | P | ✅ | `tree_readonly` |
-| H5 | `session-manager-preview-available` quiesce point: capture is deterministic once every source's thumbnail+filmstrip files exist | 3188 | P | ⬜ | `sm_media_load`, `sm_mp4_load` (baseline capture pending); integration: `sm_mp4_all` with `SM_TEST_MP4_QUIESCE=1` |
+| H5 | `session-manager-preview-available` quiesce point: capture is deterministic once every source's thumbnail+filmstrip files exist | 3188 | P | ⬜ | `sm_media_load`, `sm_mp4_load` (baseline capture pending); integration: `sm_mp4_all` (always quiesces) |
 
 > **Determinism rule:** default pilot fixtures use media-free sources and capture with
 > the fallback icon (H4), which is deterministic. Real-preview scenarios (H1/H2/H5) now
@@ -381,7 +380,7 @@ needed, go under `scenarios/` with a golden under `golden/<id>/`.
 ## Definition of done
 
 See the shared
-**[`../VERIFICATION.md`](../VERIFICATION.md#definition-of-done-per-migration-slice)**: a
-slice is accepted when every coverage item in it is ✅ against the Mu goldens at
+**[`../VERIFICATION.md`](../VERIFICATION.md#definition-of-done)**: the migration is
+accepted when every coverage item is ✅ against the Mu goldens at
 `-dmax 0`, and any cross-package API it exposes (e.g. `selectedNodes()`, §O.5) stays
 callable before the Mu source is removed.

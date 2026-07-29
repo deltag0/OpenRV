@@ -58,23 +58,59 @@ python3 src/test/golden/harness/run_scenario.py \
 
 ---
 
-## The two gates
+## The five gates
 
-Both are HARD: a scenario passes only if **both** pass. They catch disjoint regression
-classes, so neither subsumes the other.
+Every Mu→Python package migration must pass these **five mandatory gates**, in order.
+Package orchestrators (`run_migration_loop.sh` / `run_migration_loop_mac.sh`) run them
+sequentially; on any failure the script exits immediately.
 
-- **Behavioral gate (B)** — after a scripted scenario, the node graph must match the Mu
-  golden exactly: node set, types, connections, and persistent properties, captured via
-  `saveSession(sparse=False)` → normalized text GTO. Catches wrong graph mutations,
-  property writes, and connections — the *logic*.
-- **Pixel gate (P)** — the relevant panel/dialog/editor grabbed to PNG and compared at
-  `rmsImageDiff -cmp -dmax 0` on the pinned Xvfb + software-Mesa path. Catches *visual*
-  regressions the graph can't see — layout, icons, status marks, widget state.
+| Gate | Name | Command (orchestrator sets) | Pass criteria |
+|------|------|-----------------------------|---------------|
+| **0** | Runtime clean | `GATE=runtime IMPL=python` | Every scenario: no tracebacks, exceptions, or `runtime.eval` errors in `$out/rv.log` or `traceback.txt` (`harness/runtime_log_check.py`). Enforced on every `run_scenario.py` call, not only in this gate. |
+| **1** | Behavioral | `GATE=behavioral IMPL=python` | Every scenario: normalized `session.rv` matches committed golden (node graph, properties, connections). |
+| **2** | Pixel | `GATE=pixel IMPL=python` | Every golden PNG: `rmsImageDiff -cmp -dmax 0` (see [Determinism requirements (gate 2)](#determinism-requirements-gate-2)). |
+| **3** | Default launch | `GATE=default` | Every scenario: behavioral match with `--impl default` (no `RV_MODE_IMPL_*`; RV picks its shipped default). |
+| **4** | Mu baseline integrity | `GATE=both IMPL=mu` | Every scenario: Mu implementation still matches committed goldens (harness and baselines sound). |
 
-Some behaviors are observable only one way (a hover swap is P-only; a property write with
-no visible change is B-only). Each inventory item records which gate(s) apply.
+Gates **1** and **2** are complementary: behavioral catches logic the graph can see; pixel
+catches layout/rendering it cannot. Some inventory items apply to one gate only (noted in
+each package's `COVERAGE.md`).
 
-## Coverage status legend
+### Gate 0 — Runtime clean
+
+`run_scenario.py` captures RV stdout/stderr to `$out/rv.log`. Exit code **5** if the log
+or `traceback.txt` contains runtime failures in the package under test. Event-handler
+exceptions (e.g. during widget clicks) do not fail the scenario script itself — this gate
+catches them.
+
+### Gate 1 — Behavioral
+
+After a scripted scenario, `compare.py` diffs normalized GTO from `saveSession(sparse=False)`
+against the committed golden.
+
+### Gate 2 — Pixel
+
+After a scripted scenario, panel/viewport PNGs are compared at `-dmax 0` under the pinned
+headless path (Xvfb + software Mesa on Linux; real display + `golden-mac/` on macOS).
+
+### Gate 3 — Default launch
+
+Same behavioral check as gate 1, but scenarios run with `--impl default` so RV's normal
+mode-selection path is exercised (not an explicit `RV_MODE_IMPL_*` override).
+
+### Gate 4 — Mu baseline integrity
+
+Full scenario pass with `IMPL=mu`. Confirms committed goldens and harness still match Mu;
+never hand-edit `golden/` or `golden-mac/`.
+
+**Platform baselines:** Mac output compares to `golden-mac/` only; Linux to `golden/` only
+— never cross-compare ([Mac-native capture](#mac-native-capture)).
+
+**Conditional steps** (not gates): after gates 0–2 pass, the orchestrator may run [GUI
+sanity](#gui-sanity-real-display) and the [code review agent](#code-review-agent). These
+are required before calling migration done but are not numbered gates.
+
+---
 
 Used by every package inventory. **A ✅ means the behavior is pinned by a committed golden
 (the Mu ground truth is recorded) — NOT that it has been verified in the Python port.**
@@ -96,19 +132,20 @@ Reusable across all packages; lives in `src/test/golden/harness/`.
 
 | File | Role |
 |---|---|
-| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. Pass `--impl mu\|python` and optional `--mode` to select implementations (see [toggle section](#mupython-implementation-toggle)). Runs `golden_bootstrap.py` before each scenario. |
+| `run_scenario.py` | Launches RV headless (Xvfb + software Mesa), runs an in-process scenario, collects artifacts into an out dir. Captures RV log to `$out/rv.log`; fails on runtime errors unless `--allow-runtime-errors`. Pass `--impl mu\|python` and optional `--mode` to select implementations. When the rv-packages directory name differs from the mode name, pass `--package <dir>` (e.g. `--mode layer_select_mode --package layer_select`). Runs `golden_bootstrap.py` before each scenario. |
+| `runtime_log_check.py` | Scans `rv.log` / `traceback.txt` for runtime failures; used by `run_scenario.py` and `GATE=runtime`. Allowlist for infra-only noise: `runtime_error_allowlist.txt`. |
 | `golden_bootstrap.py` | In-RV pre-scenario hook: activates `source_setup` when `GOLDEN_SOURCE_SETUP=1` (set automatically for `tree_readonly.py`). |
-| `compare.py` | Behavioral gate (normalized GTO diff) + pixel gate (`rmsImageDiff`). Exit 0 = PASS. |
+| `compare.py` | Normalized GTO diff + `rmsImageDiff` pixel compare (gates 1 and 2). Exit 0 = PASS. |
 
 ### Package runners (`session_manager`)
 
 | File | Role |
 |---|---|
-| `session_manager/run_all_goldens.sh` | **Required migration gate (Linux)** — runs every scenario (except integration/diagnostic skips), then `compare.py` at `-dmax 0` against `golden/`. Default `IMPL=python`; use `IMPL=mu` to verify Mu determinism or re-baseline. |
-| `session_manager/run_gui_sanity_gate.sh` | **Second required gate** — re-runs the same scenarios against a real on-screen display (no Xvfb), still compared against `golden/` (the Linux baselines). Behavioral check is hard pass/fail; pixel differences are reported (RMS + max-diff + PNG paths), not scripted, and must be reviewed. See [GUI sanity gate](#gui-sanity-gate-real-display) below. |
-| `session_manager/run_all_goldens_mac.sh` | **Required migration gate (macOS)** — same shape as `run_all_goldens.sh`, but self-consistently Mac-native: real display (macOS has no Xvfb), compared against `golden-mac/` (never against `golden/` — see [Mac-native gate](#mac-native-gate)). Hard pass/fail on both behavioral and pixel. |
+| `session_manager/run_all_goldens.sh` | Linux scenario runner — used by the orchestrator for [the five gates](#the-five-gates); `compare.py` against `golden/`. |
+| `session_manager/run_gui_sanity_gate.sh` | Conditional real-display step; see [GUI sanity](#gui-sanity-real-display). |
+| `session_manager/run_all_goldens_mac.sh` | macOS scenario runner — same role, compared against `golden-mac/` ([Mac-native capture](#mac-native-capture)). |
 | `session_manager/capture_golden.sh` | Capture Mu baselines into `golden/<id>/` on Linux (`--impl mu` via `run_scenario.py`, under Xvfb). |
-| `session_manager/capture_golden_mac.sh` | Capture Mu baselines into `golden-mac/<id>/` on macOS (real display). Captures each scenario twice and refuses to commit unless both captures are byte-identical — see [Mac-native gate](#mac-native-gate). |
+| `session_manager/capture_golden_mac.sh` | Capture Mu baselines into `golden-mac/<id>/` on macOS (real display). Captures each scenario twice and refuses to commit unless both captures are byte-identical. |
 | `session_manager/fixtures/run_mp4_integration.sh` | Optional integration only (`sm_mp4_all`); not part of `run_all_goldens.sh`. |
 
 ```bash
@@ -136,10 +173,20 @@ src/test/golden/
   <package>/
     COVERAGE.md              # package-specific behavior inventory + file list
     scenarios/<id>.py        # in-RV scenarios (command-API driven; QTest for DnD)
-    golden/<id>/             # committed Linux baselines: session.rv (+ panel.png)
-    golden-mac/<id>/         # committed macOS baselines: session.rv (+ panel.png) --
-                              # separate pixel space from golden/, see Mac-native gate
+    run_migration_loop.sh    # full migration loop orchestrator (Linux)
+    run_migration_loop_mac.sh
+    run_all_goldens.sh       # scenario runners (orchestrator only; debug individually)
+    run_all_goldens_mac.sh
+    run_gui_sanity_gate.sh   # conditional sanity step (orchestrator calls this)
+    capture_golden.sh        # Mu baseline capture (Linux)
+    capture_golden_mac.sh    # Mu baseline capture (macOS)
+    golden/<id>/             # committed Linux baselines: session.rv (+ *.png)
+    golden-mac/<id>/         # committed macOS baselines (separate pixel space)
 ```
+
+Package-specific harness notes (fixtures, mode/package name mismatches, headless
+caveats) belong in `COVERAGE.md`, not a separate doc — unless the package needs a
+one-line pointer file, keep everything in COVERAGE.
 
 ### Headless operational rules
 
@@ -162,7 +209,7 @@ src/test/golden/
 
 ---
 
-## Determinism requirements for the pixel gate
+## Determinism requirements (gate 2)
 
 A hard `-dmax 0` gate is only safe if capture is bit-reproducible.
 
@@ -181,7 +228,7 @@ flaky gate trains the AI loop to hack the oracle.
 
 ---
 
-## GUI sanity gate (real display)
+## GUI sanity (real display)
 
 `run_all_goldens.sh` above is deterministic, but it pins exactly one rendering path: Xvfb +
 software Mesa. A port can pass that gate while being visibly broken under a real
@@ -190,8 +237,8 @@ environment noise the headless path can't see. `<package>/run_gui_sanity_gate.sh
 catch that class of regression by re-running the same scenarios against a real on-screen
 display instead of Xvfb.
 
-This is a **required gate, not a smoke test — but it is deliberately not a scripted pixel
-pass/fail.** It runs two independent checks per scenario:
+This is a **required step, not a smoke test — and deliberately not a numbered gate.** It runs
+two independent checks per scenario:
 
 - **Behavioral (node graph):** same as headless, always exact, HARD. A real-display run
   producing a different node graph than the pinned golden is exactly as serious as it is
@@ -218,21 +265,9 @@ objective (a broken port that can't find the widget never writes the file), only
 behavioral gate passed but which has a pixel report attached, so the reviewer knows exactly
 which scenarios to look at without re-reading the whole log.
 
-**Final phase: launch like a normal app, no `--impl` at all.** Every other phase in this
-gate always forces an explicit `RV_MODE_IMPL_<mode>` (needed for the Mu-vs-Python comparison
-the rest of the gate does), so none of them ever exercise RV's actual default
-mode-selection logic. A port can pass every other phase while still being unreachable on a
-genuinely normal launch if that default-selection path is wrong — this phase exists
-specifically to close that blind spot.
-
-This phase re-runs every non-skipped scenario one more time via `run_scenario.py --impl
-default` (a real, first-class option — not a throwaway env var — that sets no
-`RV_MODE_IMPL_*` at all, letting RV pick its own shipped default exactly as a normal launch
-would). It is a **hard gate**: missing artifacts and behavioral mismatch fail it, the same
-rule as everywhere else in this doc. It does not replace the main loop's Mu-vs-Python
-comparison — the two are complementary: the main loop asks "does the *implementation* I
-selected behave correctly," this phase asks "does *selecting no implementation at all* still
-work."
+The script's final phase re-runs scenarios with `--impl default` on a real display. See
+[Gate 3](#gate-3--default-launch); the orchestrator runs the authoritative Gate 3 pass via
+`run_all_goldens*`.
 
 **Known bug, `sm_meridian_mp4_load` and `sm_media_add_sources` skipped:** both use
 `addSources()` + `waitForProgressiveLoading()`, which hangs forever under a real display
@@ -243,16 +278,15 @@ path is fixed.
 
 ---
 
-## Mac-native gate
+## Mac-native capture
 
-Unlike the GUI sanity gate above (real display, but still judged against the *Linux*
-`golden/` baselines, so pixel is report-only), the Mac-native gate is a **third, fully
-self-consistent, hard pass/fail gate scoped to macOS**: Mac output is compared only against
-Mac-captured baselines in `golden-mac/`, via `run_all_goldens_mac.sh` /
-`capture_golden_mac.sh`. It does not replace or get reconciled with `golden/` — the two
-pixel spaces are not comparable (see below) and are never diffed against each other.
+Unlike [GUI sanity](#gui-sanity-real-display) (real display, but judged against Linux
+`golden/` baselines, so pixel is report-only), macOS migration uses a **separate committed
+baseline tree** `golden-mac/`: Mac output is compared only against Mac-captured baselines via
+`run_all_goldens_mac.sh` / `capture_golden_mac.sh`. It does not replace `golden/` — the two
+pixel spaces are not comparable and are never diffed against each other.
 
-**Why this is viable as a real gate, not just a sanity check** (verified empirically
+**Why separate Mac baselines work** (verified empirically
 2026-07-24 on one Mac dev machine, real logged-in display session, no Xvfb — macOS has
 none):
 
@@ -304,13 +338,156 @@ real scenario bug.
 
 ---
 
-## Final review gate (independent code review)
+## Migration loop
 
-Every gate above checks *behavior* — does the port produce the right graph/pixels/panel.
-None of them read the *code*. Added 2026-07-24, as the last step before treating a loop
-iteration's changes as done: a fresh, independent agent reviews the actual diff for
-correctness — the class of defect that passes every behavioral gate simply because the test
-suite happens not to exercise it.
+The migration loop runs [the five gates](#the-five-gates) via each package's orchestrator.
+Package inventories (`COVERAGE.md`) hold behavior lists, fixtures, and package-specific
+debug hints only.
+
+### Orchestrator script
+
+Each package provides `run_migration_loop.sh` (Linux / `golden/`) and/or
+`run_migration_loop_mac.sh` (macOS / `golden-mac/`). One invocation runs gates **0 → 4**
+in order, then conditional GUI sanity and code-review steps if gates 0–2 passed.
+
+Scenario iteration lives in `run_all_goldens*.sh`; gate sequencing lives in the
+orchestrator. On any failure the script **exits immediately**. Fix the port, then run the
+**same script again** — that is the loop.
+
+```bash
+# macOS (typical dev path when golden-mac/ exists):
+cd src/test/golden/<package>
+./run_migration_loop_mac.sh
+
+# Linux (after capture_golden.sh):
+./run_migration_loop.sh
+```
+
+Do **not** run `GATE=behavioral ./run_all_goldens*.sh` as the normal workflow — that is
+for debugging a single failing scenario only.
+
+Individual gate env vars (`GATE`, `IMPL`) are set by the orchestrator — do not override
+when running the full loop. See [The five gates](#the-five-gates) for what each gate checks.
+
+Orchestrator env vars (all packages):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SKIP_SANITY` | `0` | `1` = skip GUI sanity step (local dev only) |
+| `SKIP_REVIEW` | `0` | `1` = skip code-review reminder (local dev only) |
+| `SKIP_PIXEL_GATE` | `0` | `1` = accept gate 2 failure and continue (package-specific; use sparingly) |
+
+If gate 0, 1, or 2 fails, the orchestrator never reaches sanity, review, or gates 3–4.
+
+The **agent** drives the loop: edit the Python port → `./run_migration_loop*.sh` → repeat
+until exit 0 or **15 failed runs** ([allowed operations](#allowed-operations) §2).
+
+Do **not**:
+
+- Run gates or scenarios individually except when debugging one failure
+- Use iteration counters or env vars (`ITERATION=`, etc.)
+- Call migration done until the orchestrator exits 0 **and** sanity pixel review **and**
+  code review (no blocking findings) are satisfied
+- **Stop early because of a blocker** — see [When you hit a blocker](#when-you-hit-a-blocker-keep-going-until-unblocked) below
+
+**Loop algorithm:**
+
+```
+attempts = 0
+while attempts < 15:
+    attempts += 1
+    fix Python port under src/plugins/rv-packages/<package>/
+    run: ./run_migration_loop_mac.sh   # or run_migration_loop.sh on Linux
+    if exit 0:
+        judge NEEDS_AI_REVIEW pixel reports (if any) — real regression → keep looping
+        run code review agent — blocking findings → fix and keep looping
+        if both satisfied → DONE
+    else:
+        read which GATE failed from script output
+        diagnose (diag.txt under /tmp, compare.py on failing scenario)
+        if root cause is still unclear → keep investigating; do not hand off yet
+report failure after 15 attempts
+```
+
+#### When you hit a blocker — keep going until unblocked
+
+A **blocker** is anything that prevents the next gate from passing even though the
+immediate Python diff looks “done”: harness wiring, mode activation/registration, Mu helper
+not loading, segfaults in a render path, optional-package preload under `-noPrefs`, stale
+`rvpkg`/`rvload2`, missing fixtures, etc.
+
+**Do not** treat a blocker as a reason to pause the loop, summarize, or ask the user
+“what next?” unless you genuinely need a product decision or credentials you cannot infer
+from the repo.
+
+**Do** stay in the loop until the blocker is removed:
+
+1. **Name the blocker precisely** — e.g. `LayerSelectRender` inactive (`isModeActive`
+   false), not vague “pixel mismatch”.
+2. **Debug in isolation** — one scenario, `diag.txt`, minimal repro, Mu vs Python, with/without
+   harness flags; read RV stderr and mode-manager messages.
+3. **Try the next fix** — PACKAGE/`rvload2`, preload, separate rvpkg, harness env, Mu bridge,
+   alternate architecture; rebuild staged artifacts when needed.
+4. **Re-run the orchestrator** after each meaningful change (`./run_migration_loop*.sh`, or
+   the single failing gate/scenario while iterating).
+5. **Repeat** until the gate passes or you hit the 15-run cap.
+
+Stopping with “here’s the blocker” without exhausting reasonable fixes counts as an
+**incomplete loop run**. The user expects the agent to **keep doing what it takes** to
+unblock — same session, same task — not defer infrastructure work back to them.
+
+Only escalate to the user when:
+
+- You need an explicit product/architecture choice (e.g. modify a core cpp file)
+- You need assets or credentials not in the repo
+- 15 full loop attempts failed and you can document what was tried
+
+### On failure — which gate?
+
+| Script output | Typical cause |
+|---------------|---------------|
+| `GATE 0 FAILED` | Runtime error during scenario — tracebacks, `runtime.eval`, exceptions in `$out/rv.log` |
+| `GATE 1 FAILED` | Wrong graph/properties — logic, property writes, mode lifecycle |
+| `GATE 2 FAILED` | Visual regression — layout, GL render, widget state |
+| `SANITY FAILED` | Real-display behavioral drift (same class as gate 1) |
+| `NEEDS_AI_REVIEW` | Pixel diff on real display — inspect PNGs; see [GUI sanity](#gui-sanity-real-display) |
+| `GATE 3 FAILED` | Broken default launch path — PACKAGE wiring, mode registration, preload |
+| `GATE 4 FAILED` | Harness or golden corruption — re-capture Mu; never hand-edit goldens |
+
+Package-specific fix hints live in that package's `COVERAGE.md`.
+
+**Debug one scenario** (exception to full loop):
+
+```bash
+python3 src/test/golden/harness/run_scenario.py \
+  --scenario src/test/golden/<package>/scenarios/<id>.py \
+  --out /tmp/golden_debug --impl python \
+  --mode <modeName> [--package <pkgDir>]   # when dir ≠ mode name
+cat /tmp/golden_debug/diag.txt
+python3 src/test/golden/harness/compare.py \
+  --golden-dir src/test/golden/<package>/golden-mac/<id> \
+  --actual-dir /tmp/golden_debug --dmax 0
+```
+
+(use `golden/` instead of `golden-mac/` on Linux; add `--no-xvfb` on macOS)
+
+### Loop complete when
+
+- `./run_migration_loop*.sh` exits **0**
+- GUI sanity pixel reports judged acceptable (if any `NEEDS_AI_REVIEW`)
+- Code review: no unresolved **blocking** findings
+- Every `COVERAGE.md` item ✅ (or 🟡 with recorded justification)
+
+Then ask the user about removing Mu sources and updating `PACKAGE`.
+
+---
+
+## Code review agent
+
+The [five gates](#the-five-gates) check *behavior* — graph, pixels, runtime, defaults. None
+read the *code*. Before treating a loop iteration as done, a fresh independent agent reviews
+the actual diff for correctness — defects that pass every gate because the suite did not
+exercise them.
 
 **Scope: one iteration, not the whole branch.** Review the diff between the current commit
 and its immediate parent (`git diff <parent>..HEAD`), not the full branch-vs-`main` history —
@@ -328,31 +505,32 @@ most-severe first. **Do not** use the `/code-review` slash command for this — 
 explicit user invocation only (`disable-model-invocation`) and cannot be called
 programmatically by a loop.
 
-**Enforcement:** a hard gate on *blocking* findings (real defects — wrong logic, unsafe
-assumptions, a fix applied to only one of several places it was needed) — the loop must fix
-and re-review, same discipline as every other gate in this doc. Non-blocking findings (style,
-minor nits) are reported but don't fail the run; don't let the gate become noisy enough that
-real findings get lost in it.
+**Enforcement:** blocking findings (wrong logic, unsafe assumptions, incomplete fixes) require
+another fix-and-retry cycle. Non-blocking findings (style, minor nits) are reported but do
+not fail the run.
+
+Conditional step in the [migration loop](#migration-loop) (after gates 0–2 pass). The
+orchestrator prints a reminder; the implementing agent spawns the reviewer and acts on
+blocking findings.
 
 ---
 
-## Definition of done (per migration slice)
+## Definition of done
 
-A slice of a Python port is accepted when:
+A package migration is accepted when:
 
-1. Every coverage item in that slice is ✅ (a passing golden scenario pins it).
-2. On Linux: both gates pass at `-dmax 0` against the Mu-captured goldens headlessly
-   (`run_all_goldens.sh`), **and** the GUI sanity gate (`run_gui_sanity_gate.sh`) exits clean
-   (behavioral matches) **and** its pixel report has been reviewed and judged acceptable —
-   see [GUI sanity gate](#gui-sanity-gate-real-display). On macOS (if that platform is in
-   scope for the slice): `run_all_goldens_mac.sh` passes at `-dmax 0` against `golden-mac/`
-   — see [Mac-native gate](#mac-native-gate).
-3. No item in the slice is left 🟡 without an explicit, recorded justification.
-4. Any cross-package API the slice exposes (callable from other Mu/Python packages)
+1. Every coverage item in `COVERAGE.md` is ✅ (a passing golden scenario pins it).
+2. [The five gates](#the-five-gates) pass via `./run_migration_loop*.sh` on the target
+   platform(s).
+3. [GUI sanity](#gui-sanity-real-display) has run: behavioral matches; pixel report reviewed
+   and judged acceptable.
+4. On macOS (if in scope): compare against `golden-mac/` — see [Mac-native capture](#mac-native-capture).
+5. No item is left 🟡 without an explicit, recorded justification.
+6. Any cross-package API the package exposes (callable from other Mu/Python packages)
    remains callable — verified by a scenario or integration check before the Mu source is
    removed.
-5. The [final review gate](#final-review-gate-independent-code-review) has run against this
-   iteration's diff and reported no unresolved blocking findings.
+7. The [code review agent](#code-review-agent) has run against this iteration's diff with no
+   unresolved blocking findings.
 
 ## Allowed Operations
 
@@ -360,18 +538,13 @@ A slice of a Python port is accepted when:
    capture_golden.sh / capture_golden_mac.sh may write them, and only when the
    determinism check passes
 2. No more than 15 attempts at running all tests is allowed (15 iterations)
-3. The GUI sanity gate (`run_gui_sanity_gate.sh`) must also be run before a slice is
-   considered done: its behavioral check is a hard gate; its pixel report has no scripted
-   threshold and must be reviewed and judged each run (see
-   [GUI sanity gate](#gui-sanity-gate-real-display)) — do not treat the script's exit code
-   alone as a substitute for that review, and do not add a scripted pixel threshold to paper
-   over a judgment call
+3. [GUI sanity](#gui-sanity-real-display) (`run_gui_sanity_gate.sh`) must run before a
+   migration is considered done — behavioral is hard pass/fail; pixel is report-only and must
+   be reviewed each run
 4. golden/ and golden-mac/ are separate pixel spaces and must never be compared against each
    other or merged — a Mac capture failing against `golden/` (or a Linux capture failing
    against `golden-mac/`) is not a real signal, just a platform mismatch; always compare Mac
    output to `golden-mac/` and Linux output to `golden/`
-5. Before calling an iteration done, run the [final review
-   gate](#final-review-gate-independent-code-review) (a fresh agent reviewing this
-   iteration's actual diff, not the whole branch) and treat any blocking finding it reports
-   as a failure requiring another fix-and-retry cycle — the behavioral gates above check
-   outcomes, not code, and cannot see this class of defect
+5. Before calling an iteration done, run the [code review agent](#code-review-agent) on this
+   iteration's diff (not the whole branch); blocking findings require another fix-and-retry
+   cycle

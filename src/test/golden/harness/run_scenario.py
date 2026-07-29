@@ -17,13 +17,15 @@ Why it is shaped this way (all learned empirically on 2026-07-21):
 
 Usage:
     run_scenario.py --scenario PATH --out DIR [--rv PATH] [--timeout N]
-    [--impl mu|python] [--mode MODE[,MODE...]]
+    [--impl mu|python] [--mode MODE[,MODE...]] [--package PKG[,PKG...]]
 """
 
 import argparse
 import os
 import subprocess
 import sys
+
+from runtime_log_check import check_out_dir
 
 # Repo root = five levels up from this file
 #   src/test/golden/harness/run_scenario.py -> <repo>
@@ -47,6 +49,7 @@ SESSION_MANAGER_SIBLING_MODES = {
     "transform_manip",
 }
 SESSION_MANAGER_ALL_MODES = [SESSION_MANAGER_PKG] + sorted(SESSION_MANAGER_SIBLING_MODES)
+LAYER_SELECT_PKG = "layer_select"
 
 
 def package_dir_for_mode(mode_name: str) -> str | None:
@@ -69,6 +72,31 @@ def apply_mode_impl(env: dict[str, str], modes: list[str], impl: str) -> None:
 
 def parse_mode_names(raw: str) -> list[str]:
     return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def parse_package_names(raw: str | None, extras: list[str] | None = None) -> list[str]:
+    """Comma-separated and/or repeated --package values."""
+    names: list[str] = []
+    if raw:
+        names.extend(parse_mode_names(raw))
+    for item in extras or []:
+        names.extend(parse_mode_names(item))
+    # Preserve order, drop duplicates.
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
+def package_dir_for_name(package_name: str) -> str | None:
+    """Resolve an rv-packages/ directory name to an absolute source path."""
+    pkg = os.path.join(REPO_ROOT, "src", "plugins", "rv-packages", package_name)
+    if os.path.isdir(pkg):
+        return pkg
+    return None
 
 
 # The in-RV wrapper: exec the scenario file, and ALWAYS hard-exit so a
@@ -113,6 +141,12 @@ def main() -> int:
         "smoke-testing scenario logic on a platform without Xvfb (e.g. macOS).",
     )
     ap.add_argument(
+        "--menu-bar",
+        action="store_true",
+        help="Do not pass -nomb (keep the menu bar). Required for scenarios that "
+        "exercise Tools/… menu items headlessly.",
+    )
+    ap.add_argument(
         "--impl",
         choices=("mu", "python", "default"),
         default=None,
@@ -132,6 +166,20 @@ def main() -> int:
         default=",".join(SESSION_MANAGER_ALL_MODES),
         help="Comma-separated RV mode name(s) affected by --impl "
         f"(default: all {len(SESSION_MANAGER_ALL_MODES)} session_manager package modes)",
+    )
+    ap.add_argument(
+        "--allow-runtime-errors",
+        action="store_true",
+        help="Do not fail when RV log contains runtime errors (debug only).",
+    )
+    ap.add_argument(
+        "--package",
+        action="append",
+        default=[],
+        help="rv-packages/ directory name(s) to prepend to PYTHONPATH when the package "
+        "folder differs from --mode (repeatable; each value may be comma-separated). "
+        "Also used to scope runtime-error detection. "
+        "Example: --mode layer_select_mode --package layer_select",
     )
     args = ap.parse_args()
 
@@ -176,6 +224,34 @@ def main() -> int:
         pkg_dir = package_dir_for_mode(name)
         if pkg_dir and pkg_dir not in pkg_dirs:
             pkg_dirs.append(pkg_dir)
+    for pkg_name in parse_package_names(None, args.package):
+        pkg_dir = package_dir_for_name(pkg_name)
+        if pkg_dir is None:
+            print(f"FAIL: --package {pkg_name!r} not found under rv-packages/", file=sys.stderr)
+            return 2
+        if pkg_dir not in pkg_dirs:
+            pkg_dirs.append(pkg_dir)
+    package_names = parse_package_names(None, args.package)
+    package_markers = list(package_names)
+    for name in mode_names:
+        if name not in package_markers:
+            package_markers.append(name)
+    mu_module_dirs: list[str] = []
+    for pkg_dir in pkg_dirs:
+        if os.path.isdir(pkg_dir):
+            mu_module_dirs.append(pkg_dir)
+    stage_mu = os.path.join(REPO_ROOT, "_build", "stage", "app", "PlugIns", "Mu")
+    stage_mu_mac = os.path.join(
+        REPO_ROOT, "_build", "stage", "app", "RV.app", "Contents", "PlugIns", "Mu"
+    )
+    for candidate in (stage_mu_mac, stage_mu):
+        if os.path.isdir(candidate) and candidate not in mu_module_dirs:
+            mu_module_dirs.append(candidate)
+    if mu_module_dirs:
+        prior_mu = env.get("MU_MODULE_PATH", "")
+        env["MU_MODULE_PATH"] = os.pathsep.join(
+            mu_module_dirs + ([prior_mu] if prior_mu else [])
+        )
     # Scenarios are exec()'d with no __file__, so they can't find sibling
     # modules (_sm_common.py) or the shared harness (qt_scenario_utils.py) on
     # their own -- always put both on PYTHONPATH, not just when pkg_dirs is
@@ -187,7 +263,7 @@ def main() -> int:
     env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
     if args.no_xvfb:
-        cmd = [args.rv, "-noPrefs", "-nomb", "-pyeval", _PYEVAL]
+        cmd = [args.rv, "-noPrefs", "-pyeval", _PYEVAL]
     else:
         cmd = [
             "xvfb-run",
@@ -196,9 +272,22 @@ def main() -> int:
             f"-screen 0 {args.screen}",
             args.rv,
             "-noPrefs",
-            "-nomb",
             "-pyeval",
             _PYEVAL,
+        ]
+    if not args.menu_bar:
+        # Insert -nomb before -pyeval (deterministic headless default).
+        cmd.insert(cmd.index("-pyeval"), "-nomb")
+    # Optional rv-packages (e.g. layer_select) are skipped under -noPrefs unless
+    # ModeManagerPreload forces registration + load (see rvnuke's rvNuke.py).
+    preload_modes = [n for n in mode_names if n not in SESSION_MANAGER_ALL_MODES]
+    flag_tokens: list[str] = []
+    if preload_modes:
+        flag_tokens.append("ModeManagerPreload=" + ",".join(preload_modes))
+    if flag_tokens:
+        cmd[cmd.index("-pyeval") : cmd.index("-pyeval")] = [
+            "-flags",
+            *flag_tokens,
         ]
     # env.get(..., "mu") would misreport --impl default as "mu" -- it isn't
     # set to anything; show that honestly instead of implying a value.
@@ -210,14 +299,37 @@ def main() -> int:
         f"[run_scenario] {os.path.basename(scenario)} -> {out} ({impl_note})",
         file=sys.stderr,
     )
+    rv_log_path = os.path.join(out, "rv.log")
     try:
-        proc = subprocess.run(cmd, env=env, timeout=args.timeout)
+        with open(rv_log_path, "w", encoding="utf-8") as rv_log:
+            proc = subprocess.run(
+                cmd,
+                env=env,
+                timeout=args.timeout,
+                stdout=rv_log,
+                stderr=subprocess.STDOUT,
+            )
     except subprocess.TimeoutExpired:
         print(f"FAIL: RV did not finish within {args.timeout}s", file=sys.stderr)
         return 124
     if proc.returncode != 0:
         print(f"FAIL: scenario exited {proc.returncode}", file=sys.stderr)
         return proc.returncode
+
+    if not args.allow_runtime_errors:
+        violations = check_out_dir(out, package_markers=package_markers or None)
+        if violations:
+            err_path = os.path.join(out, "runtime_errors.txt")
+            with open(err_path, "w", encoding="utf-8") as ef:
+                ef.write("\n\n".join(violations))
+            print("FAIL: runtime errors during scenario (see rv.log, runtime_errors.txt)", file=sys.stderr)
+            for v in violations[:3]:
+                print("---", file=sys.stderr)
+                print(v[:2000], file=sys.stderr)
+            if len(violations) > 3:
+                print(f"... and {len(violations) - 3} more", file=sys.stderr)
+            return 5
+
     print("[run_scenario] OK", file=sys.stderr)
     return 0
 

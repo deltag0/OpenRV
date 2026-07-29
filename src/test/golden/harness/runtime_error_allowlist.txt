@@ -1,0 +1,6 @@
+# One regex per line — matched against entire traceback blocks or error lines.
+# Use ONLY for known RV startup/infra noise outside the package under migration.
+# Never allowlist runtime.eval failures or tracebacks in the migrated package.
+#
+SequenceGroup_edit_mode\.py
+SequenceGroupEditMode
