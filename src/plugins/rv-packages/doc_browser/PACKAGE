@@ -9,7 +9,7 @@ system: true
 hidden: true
 
 modes: 
-  - file: doc_browser
+  - file: doc_browser.py
     load: delay
 
 description: |

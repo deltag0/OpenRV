@@ -270,7 +270,7 @@ module: asciidoc_to_html {
 }
 
 
-module: doc_browser {
+module: doc_browser_mu {
 use runtime;
 use asciidoc_to_html;
 
@@ -1664,7 +1664,7 @@ require lutgen;
 require bug;
 
 
-class: DocBrowserMode : MinorMode
+class: DocBrowserImpl : MinorMode
 { 
     QMainWindow _window;
     DocBrowser _browser;
@@ -1679,13 +1679,13 @@ class: DocBrowserMode : MinorMode
         event.reject();
     }
 
-    documentation: "Needed to sub-class just to get hideEvent()";
+    documentation: "Doc browser UI (Mu bridge for Python MinorMode — does not register as RV mode).";
 
     class: DocBrowserWindow : QMainWindow
     {
-        DocBrowserMode  _mode;
+        DocBrowserImpl  _mode;
 
-        method: DocBrowserWindow(QWidget parent, int flags, DocBrowserMode mode)
+        method: DocBrowserWindow(QWidget parent, int flags, DocBrowserImpl mode)
         {
             _mode = mode;
             QMainWindow.QMainWindow(this, parent, flags);
@@ -1693,7 +1693,7 @@ class: DocBrowserMode : MinorMode
 
         method: hideEvent (void; QHideEvent event)
         {
-            if (_mode._active) _mode.toggle();
+            _mode.onWindowHidden();
         }
     }
 
@@ -1712,15 +1712,8 @@ class: DocBrowserMode : MinorMode
         }
     }
 
-    method: DocBrowserMode (DocBrowserMode; string n)
+    method: DocBrowserImpl (DocBrowserImpl;)
     {
-        init(n, 
-             [("before-session-deletion", close, "Close browser")],
-             nil, 
-             nil,
-             "z",
-             9);  // even more "always last"
-
         let path = supportPath("doc_browser");
 
         _window = DocBrowserWindow(nil, Qt.Window, this);
@@ -1771,120 +1764,10 @@ class: DocBrowserMode : MinorMode
         _window.raise();
     }
 
-    method: deactivate (void;)
-    {
-        if (_window neq nil) _window.hide();
-    }
-
-    method: activate (void;)
-    {
-        if (_window neq nil)
-        {
-            if (!_window.visible()) _window.show();
-            _window.raise();
-        }
-    }
-}
-
-//
-// UI-only shell for the Python MinorMode port (does not register as an RV mode).
-//
-class: DocBrowserUI : MinorMode
-{
-    QMainWindow _window;
-    DocBrowser _browser;
-    QLayout     _searchLayout;
-    QWidget     _searchWidget;
-    QLabel      _searchLabel;
-    QLineEdit   _searchEdit;
-
-    class: DocBrowserWindow : QMainWindow
-    {
-        DocBrowserUI _mode;
-
-        method: DocBrowserWindow(QWidget parent, int flags, DocBrowserUI mode)
-        {
-            _mode = mode;
-            QMainWindow.QMainWindow(this, parent, flags);
-        }
-
-        method: hideEvent (void; QHideEvent event)
-        {
-            _mode.onWindowHidden();
-        }
-    }
-
-    method: search (void;)
-    {
-        let text = _searchEdit.text();
-
-        if (regex("^https?://").match(text) ||
-            regex("^mudoc://").match(text))
-        {
-            _browser.handleLink(QUrl(text));
-        }
-        else
-        {
-            _browser.handleLink(QUrl("musearch:///" + text));
-        }
-    }
-
     method: onWindowHidden (void;)
     {
         use commands;
         if (isModeActive("doc_browser")) deactivateMode("doc_browser");
-    }
-
-    method: DocBrowserUI (DocBrowserUI;)
-    {
-        let path = supportPath("doc_browser");
-
-        _window = DocBrowserWindow(nil, Qt.Window, this);
-        _browser = DocBrowser(_window, QUrl.fromLocalFile(path + "/"));
-        _window.setObjectName("docBrowser");
-
-        let toolbar       = _window.addToolBar("docBrowserToolbar"),
-            backAction    = QAction(QIcon(":images/back_out.png"), "Back", _window),
-            forwardAction = QAction(QIcon(":images/forwd_out.png"), "Forward", _window),
-            backButton    = QToolButton(_window),
-            forwardButton = QToolButton(_window);
-
-        toolbar.setMovable(false);
-
-        backButton.setObjectName("backButton");
-        backButton.setDefaultAction(backAction);
-        backButton.setProperty("tbstyle", QVariant("left"));
-
-        forwardButton.setObjectName("forwardButton");
-        forwardButton.setDefaultAction(forwardAction);
-        forwardButton.setProperty("tbstyle", QVariant("right"));
-
-        toolbar.addWidget(backButton);
-        toolbar.addWidget(forwardButton);
-
-        _searchWidget = QWidget(_window, 0);
-        _searchLabel = QLabel("Search:", _searchWidget, 0);
-        _searchEdit = QLineEdit(_searchWidget);
-        _searchLayout = QHBoxLayout(_searchWidget);
-        _searchWidget.setMinimumWidth(120);
-        _searchWidget.setLayout(_searchLayout);
-        _searchLayout.addWidget(_searchLabel);
-        _searchLayout.addWidget(_searchEdit);
-        _searchLayout.setContentsMargins(10, 1, 10, 1);
-        toolbar.addWidget(_searchWidget);
-
-        _searchWidget.setObjectName("searchWidget");
-        _searchLabel.setObjectName("searchLabel");
-
-        connect(QApplication.instance(), QGuiApplication.lastWindowClosed, \: (void; ){ this._window.deleteLater();});
-
-        connect(_searchEdit, QLineEdit.returnPressed, search);
-        connect(backAction, QAction.triggered, \: (void; bool t) { this._browser.back(); });
-        connect(forwardAction, QAction.triggered, \: (void; bool t) { this._browser.forward(); });
-
-        _window.setCentralWidget(_browser);
-        _window.show();
-        _window.raise();
     }
 
     method: deactivate (void;)
@@ -1907,32 +1790,30 @@ class: DocBrowserUI : MinorMode
     }
 }
 
-DocBrowserUI _gDocBrowserUI;
+//
+// Python port bridge — singleton UI owned by doc_browser.py MinorMode.
+//
+DocBrowserImpl _gDocBrowserImpl;
 
 \: initMode (void;)
 {
-    if (_gDocBrowserUI eq nil)
-        _gDocBrowserUI = DocBrowserUI();
+    if (_gDocBrowserImpl eq nil)
+        _gDocBrowserImpl = DocBrowserImpl();
 }
 
 \: modeActivate (void;)
 {
-    if (_gDocBrowserUI neq nil) _gDocBrowserUI.activate();
+    if (_gDocBrowserImpl neq nil) _gDocBrowserImpl.activate();
 }
 
 \: modeDeactivate (void;)
 {
-    if (_gDocBrowserUI neq nil) _gDocBrowserUI.deactivate();
+    if (_gDocBrowserImpl neq nil) _gDocBrowserImpl.deactivate();
 }
 
 \: modeSessionClose (void;)
 {
-    if (_gDocBrowserUI neq nil) _gDocBrowserUI.sessionClose();
-}
-
-\: createMode (Mode;)
-{
-    return DocBrowserMode("doc_browser");
+    if (_gDocBrowserImpl neq nil) _gDocBrowserImpl.sessionClose();
 }
 
 }
